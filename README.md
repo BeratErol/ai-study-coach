@@ -32,3 +32,10 @@ Proje, web ve mobil platformlarda çalışacak şekilde ortak bir backend API al
 * Web ve mobil senkronizasyon
 
 ---
+
+## 🏗 Geliştirme Süreci
+
+Proje yaklaşık **10–12 haftalık** bir geliştirme planı doğrultusunda ilerleyecektir. Her hafta düzenli olarak GitHub üzerinden ilerleme paylaşılacaktır.
+ Final sunum hazırlığı
+
+---
