@@ -1,7 +1,3 @@
-Tamam 👌 Aşağıya düzenli, sade ve geliştirilebilir bir **README.md** taslağı bırakıyorum. Direkt kopyalayıp kullanabilirsin.
-
----
-
 # 📘 AI Study Coach
 
 ## 📌 Proje Hakkında
