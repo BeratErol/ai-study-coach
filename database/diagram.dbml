@@ -1,0 +1,56 @@
+// AI Destekli Ders Planlama ve Koçluk Sistemi - Düzenlenmiş DBML
+
+Table kullanicilar {
+  id integer [primary key, increment]
+  ad_soyad varchar
+  eposta varchar [unique]
+  sifre varchar
+  hedef_sinav varchar
+  olusturulma_tarihi timestamp [default: `now()`]
+}
+
+Table dersler {
+  id integer [primary key, increment]
+  kullanici_id integer [ref: > kullanicilar.id]
+  ders_adi varchar
+  renk_kodu varchar [default: '#3498db']
+}
+
+Table konular {
+  id integer [primary key, increment]
+  ders_id integer [ref: > dersler.id]
+  konu_adi varchar
+  is_tamamlandi boolean [default: false]
+}
+
+Table calisma_kayitlari {
+  id integer [primary key, increment]
+  kullanici_id integer [ref: > kullanicilar.id]
+  konu_id integer [ref: > konular.id]
+  sure_dakika integer
+  tip varchar 
+  tarih timestamp [default: `now()`]
+}
+
+Table deneme_sonuclari {
+  id integer [primary key, increment]
+  kullanici_id integer [ref: > kullanicilar.id]
+  deneme_adi varchar
+  net_skoru decimal
+  detaylar jsonb 
+  tarih timestamp [default: `now()`]
+}
+
+Table ai_onerileri {
+  id integer [primary key, increment]
+  kullanici_id integer [ref: > kullanicilar.id]
+  oneri_metni text
+  analiz_verisi jsonb
+  tarih timestamp [default: `now()`]
+}
+
+// Hatanın çözüldüğü kısım burası: 'konu' yerine 'konular' yapıldı.
+TableGroup Planlama_Modulu {
+  dersler
+  konular
+}

@@ -1,3 +1,6 @@
+
+---
+
 # 📘 AI Study Coach
 
 ## 📌 Proje Hakkında
@@ -6,7 +9,7 @@
 
 Sistem; kullanıcıların hedeflerini, derslerini ve performans verilerini analiz ederek kişiye özel çalışma planları oluşturur. Çalışma süreci boyunca elde edilen veriler doğrultusunda planlar dinamik olarak güncellenir.
 
-Proje, web ve mobil platformlarda çalışacak şekilde ortak bir backend API altyapısı ile geliştirilecektir.
+Proje, web ve mobil platformlarda çalışacak şekilde ortak bir backend API altyapısı ile geliştirilmektedir.
 
 ---
 
@@ -35,6 +38,42 @@ Proje, web ve mobil platformlarda çalışacak şekilde ortak bir backend API al
 
 ## 🏗 Geliştirme Süreci
 
-Proje yaklaşık **10–12 haftalık** bir geliştirme planı doğrultusunda ilerleyecektir. Her hafta düzenli olarak GitHub üzerinden ilerleme paylaşılacaktır.
+Proje yaklaşık **10–12 haftalık** bir geliştirme planı doğrultusunda ilerlemektedir. Her hafta düzenli olarak GitHub üzerinden ilerleme paylaşılacaktır.
+
+---
+
+## ✅ 1. Hafta — Analiz ve Tasarım
+
+Bu hafta proje için temel analiz ve sistem tasarımı tamamlanmıştır.
+
+### 📂 Oluşturulan Klasörler ve İçerikler
+
+#### 📁 `database/`
+
+* `diagram.dbml` → Veritabanı tasarımının DBML formatında tanımı
+* `ER_diagram.png` → Entity-Relationship diyagramı
+* `schema.sql` → Veritabanı şema yapısı
+
+#### 📁 `docs/`
+
+* `Analiz_ve_Tasarim.md` → Sistem analizi ve genel tasarım dokümanı
+* `Kullanıcı_Senaryoları.pdf` → Kullanıcı senaryoları
+* `Problem_Tanımı_ve_Gereksinim_Analizi.pdf` → Problem tanımı ve gereksinimler
+* `Proje_Dökümantasyonu.pdf` → Genel proje dokümantasyonu
+* `Wireframe_ve_Akış_Planı.pdf` → UI akışları ve wireframe taslakları
+
+---
+
+## 🚀 Sonraki Adımlar
+
+* Backend projesinin oluşturulması
+* Veritabanı bağlantısının kurulması
+* Kullanıcı kayıt ve giriş sisteminin geliştirilmesi
+
+---
+
+## 📌 Not
+
+Bu proje aktif olarak geliştirilmektedir ve her hafta yeni özellikler eklenmeye devam edecektir.
 
 ---
