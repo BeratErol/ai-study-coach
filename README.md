@@ -56,19 +56,40 @@ Bu hafta proje için temel analiz ve sistem tasarımı tamamlanmıştır.
 
 #### 📁 `docs/`
 
-* `Analiz_ve_Tasarim.md` → Sistem analizi ve genel tasarım dokümanı
-* `Kullanıcı_Senaryoları.pdf` → Kullanıcı senaryoları
-* `Problem_Tanımı_ve_Gereksinim_Analizi.pdf` → Problem tanımı ve gereksinimler
-* `Proje_Dökümantasyonu.pdf` → Genel proje dokümantasyonu
-* `Wireframe_ve_Akış_Planı.pdf` → UI akışları ve wireframe taslakları
+* `Analiz_ve_Tasarim.md`
+* `Kullanıcı_Senaryoları.pdf`
+* `Problem_Tanımı_ve_Gereksinim_Analizi.pdf`
+* `Proje_Dökümantasyonu.pdf`
+* `Wireframe_ve_Akış_Planı.pdf`
+
+---
+
+## ✅ 2. Hafta — Backend Kurulumu
+
+Bu hafta projenin backend altyapısı oluşturulmuş ve veritabanı ile entegrasyonu sağlanmıştır.
+
+### ⚙️ Yapılan İşlemler
+
+* `.NET Web API` projesi oluşturuldu
+* PostgreSQL için gerekli paketler eklendi
+
+  * `Npgsql.EntityFrameworkCore.PostgreSQL`
+  * `Microsoft.EntityFrameworkCore.Design`
+* Veritabanı varlıkları (Entities) oluşturuldu:
+
+  * User, Lesson, Topic, StudySession, ExamResult
+* `AppDbContext` yapılandırıldı
+* Fluent API ile tablo ve sütun eşleştirmeleri yapıldı
+* PostgreSQL bağlantı ayarları `appsettings.json` içine eklendi
+* İlk migration (`InitialCreate`) oluşturuldu
 
 ---
 
 ## 🚀 Sonraki Adımlar
 
-* Backend projesinin oluşturulması
-* Veritabanı bağlantısının kurulması
-* Kullanıcı kayıt ve giriş sisteminin geliştirilmesi
+* Kullanıcı kayıt ve giriş sistemi
+* Authentication işlemleri
+* İlk API endpoint’lerinin yazılması
 
 ---
 
