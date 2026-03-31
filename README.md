@@ -85,11 +85,47 @@ Bu hafta projenin backend altyapısı oluşturulmuş ve veritabanı ile entegras
 
 ---
 
-## 🚀 Sonraki Adımlar
+## ✅ 3. Hafta — Kimlik Doğrulama ve Veritabanı Entegrasyonu
 
-* Kullanıcı kayıt ve giriş sistemi
-* Authentication işlemleri
-* İlk API endpoint’lerinin yazılması
+Bu hafta projenin güvenlik altyapısı kurulmuş ve veritabanı canlıya alınmıştır.
+
+### ⚙️ Yapılan İşlemler
+
+* **PostgreSQL Servis Yapılandırması:** Yerel sunucuda PostgreSQL servisi kuruldu, `initdb` ve `locale` ayarları yapılandırılarak veritabanı motoru aktif edildi.
+* **Kullanıcı Kayıt ve Giriş (Auth):**
+  * `BCrypt.Net-Next` kütüphanesi kullanılarak şifre güvenliği (hashing) sağlandı.
+  * JWT (JSON Web Token) tabanlı kimlik doğrulama sistemi entegre edildi.
+* **Veritabanı Şeması ve Migrations:**
+  * Özel Enum tipleri (`calisma_tipi`) için PostgreSQL uyumlu yapılandırmalar yapıldı.
+  * `Fluent API` ve `HasDefaultValueSql` kullanılarak veritabanı seviyesinde varsayılan değerler atandı.
+  * `InitialCreate` migration'ı başarıyla uygulanarak tablolar oluşturuldu.
+* **API Testleri:**
+  * Swagger UI üzerinden `Register` ve `Login` endpoint'leri test edildi.
+  * Başarıyla ilk kullanıcı kaydedildi ve JWT Token üretimi doğrulandı.
+
+### 📂 Eklenen Klasörler ve İçerikler
+
+#### 📁 `Backend/`
+
+* `Controllers/AuthController.cs` → Kayıt ve giriş işlemlerini yöneten API uç noktaları.
+* `Services/AuthService.cs` → Şifre doğrulama ve Token üretim mantığı.
+* `DTOs/` → Veri transfer nesneleri (UserRegisterDto, UserLoginDto).
+
+## 🖼 Ekran Görüntüleri
+
+### ✅ Başarılı Giriş Testi
+
+![Başarılı Giriş Testi](docs/screenshots/login_success.png)
+
+Sistem, PostgreSQL veritabanı ile tam entegre çalışmakta olup, JWT tabanlı yetkilendirme başarıyla test edilmiştir.
+
+---
+
+## 🚀 Sonraki Adımlar (4. Hafta)
+
+* **Ders ve Konu Yönetimi:** Kullanıcıların kendi derslerini ve konularını ekleyebileceği CRUD işlemlerinin yazılması.
+* **Yetkilendirme (Authorization):** Sadece giriş yapmış kullanıcıların kendi verilerine erişebilmesini sağlayacak `[Authorize]` filtrelerinin eklenmesi.
+* **Global Error Handling:** API genelinde hata yakalama ve standart raporlama sisteminin kurulması.
 
 ---
 
