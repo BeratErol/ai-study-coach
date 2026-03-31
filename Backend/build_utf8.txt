@@ -1,0 +1,13 @@
+﻿  Geri y├╝klenecek projeler belirleniyor...
+C:\Users\hesap\ai-study-coach\Backend\Backend.csproj : error NU1202: Microsoft.AspNetCore.Authentication.JwtBearer 10.0.5 paketi, net9.0 (.NETCoreApp,Version=v9.0) ile uyumlu de─şil. Microsoft.AspNetCore.Authentication.JwtBearer 10.0.5 paketi ┼şunlar─▒ destekler: net10.0 (.NETCoreApp,Version=v10.0)
+  C:\Users\hesap\ai-study-coach\Backend\Backend.csproj geri y├╝klenemedi (346 ms i├ğinde).
+
+Olu┼şturma BA┼ŞARISIZ OLDU.
+
+C:\Users\hesap\ai-study-coach\Backend\Backend.csproj : error NU1202: Microsoft.AspNetCore.Authentication.JwtBearer 10.0.5 paketi, net9.0 (.NETCoreApp,Version=v9.0) ile uyumlu de─şil. Microsoft.AspNetCore.Authentication.JwtBearer 10.0.5 paketi ┼şunlar─▒ destekler: net10.0 (.NETCoreApp,Version=v10.0)
+    0 Uyar─▒
+    1 Hata
+
+Ge├ğen S├╝re 00:00:00.96
+
+─░┼ş y├╝k├╝ g├╝ncelle┼ştirmeleri var. Daha fazla bilgi i├ğin `dotnet workload list` ├ğal─▒┼şt─▒r─▒n.

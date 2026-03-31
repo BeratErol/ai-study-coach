@@ -3,24 +3,27 @@ using System;
 using Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Backend.Data.Migrations
+namespace Backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260331095819_InitialCreate")]
+    partial class InitialCreate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "9.0.2")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "calisma_tipi", "study_type", new[] { "pomodoro", "manual" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "public", "calisma_tipi", new[] { "pomodoro", "manual" });
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Backend.Models.ExamResult", b =>
@@ -124,8 +127,8 @@ namespace Backend.Data.Migrations
                     b.Property<int>("Type")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("calisma_tipi")
-                        .HasDefaultValue(0)
-                        .HasColumnName("tip");
+                        .HasColumnName("tip")
+                        .HasDefaultValueSql("'pomodoro'::public.calisma_tipi");
 
                     b.Property<int>("UserId")
                         .HasColumnType("integer")

@@ -4,7 +4,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Backend.Data.Migrations
+namespace Backend.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration
@@ -13,7 +13,7 @@ namespace Backend.Data.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AlterDatabase()
-                .Annotation("Npgsql:Enum:calisma_tipi.study_type", "pomodoro,manual");
+                .Annotation("Npgsql:Enum:public.calisma_tipi", "pomodoro,manual");
 
             migrationBuilder.CreateTable(
                 name: "kullanicilar",
@@ -106,7 +106,7 @@ namespace Backend.Data.Migrations
                     kullanici_id = table.Column<int>(type: "integer", nullable: false),
                     konu_id = table.Column<int>(type: "integer", nullable: false),
                     sure_dakika = table.Column<int>(type: "integer", nullable: false),
-                    tip = table.Column<int>(type: "calisma_tipi", nullable: false, defaultValue: 0),
+                    tip = table.Column<int>(type: "calisma_tipi", nullable: false, defaultValueSql: "'pomodoro'::public.calisma_tipi"),
                     tarih = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "NOW()")
                 },
                 constraints: table =>

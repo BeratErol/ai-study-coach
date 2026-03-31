@@ -26,8 +26,8 @@ namespace Backend.Data
             modelBuilder.Entity<StudySession>().ToTable("calisma_kayitlari");
             modelBuilder.Entity<ExamResult>().ToTable("deneme_sonuclari");
 
-            // Enum mapping mapping for StudyType (PostgreSQL ENUM 'calisma_tipi')
-            modelBuilder.HasPostgresEnum<StudyType>("calisma_tipi");
+            // Enum mapping for StudyType (PostgreSQL ENUM 'calisma_tipi')
+            modelBuilder.HasPostgresEnum<StudyType>("public", "calisma_tipi");
 
             // User configuration
             modelBuilder.Entity<User>(entity =>
@@ -82,7 +82,13 @@ namespace Backend.Data
                 entity.Property(e => e.UserId).HasColumnName("kullanici_id").IsRequired();
                 entity.Property(e => e.TopicId).HasColumnName("konu_id").IsRequired();
                 entity.Property(e => e.DurationMinutes).HasColumnName("sure_dakika").IsRequired();
-                entity.Property(e => e.Type).HasColumnName("tip").HasColumnType("calisma_tipi").HasDefaultValue(StudyType.Pomodoro);
+                
+                // DÜZELTME BURADA: 'Pomodoro' yerine 'pomodoro' (küçük harf)
+                entity.Property(e => e.Type)
+                    .HasColumnName("tip")
+                    .HasColumnType("calisma_tipi")
+                    .HasDefaultValueSql("'pomodoro'::public.calisma_tipi"); 
+                
                 entity.Property(e => e.Date).HasColumnName("tarih").HasDefaultValueSql("NOW()");
 
                 entity.HasOne(d => d.User)
