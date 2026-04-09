@@ -63,6 +63,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Register custom services
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ILessonService, LessonService>();
+builder.Services.AddScoped<ITopicService, TopicService>();
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
