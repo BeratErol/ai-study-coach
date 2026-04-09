@@ -152,19 +152,16 @@ Bu hafta kullanıcıların çalışma süreçlerini yönetecek temel modüller v
 ## 🖼 Ekran Görüntüleri
 
 ### ✅ Başarılı Giriş (Login)
-![Login Success](login_success.png)
+![Login Success](docs/screenshots/login_success.png)
 
 ### ✅ Ders Listeleme / Yönetimi
-
-![Lesson](lesson.png)
+![Lesson](docs/screenshots/lesson.png)
 
 ### ✅ Konu Ekleme
-
-![Topic Add](topic_add.png)
+![Topic Add](docs/screenshots/topic_add.png)
 
 ### ✅ Konu Güncelleme
-
-![Topic Update](topic_update.png)
+![Topic Update](docs/screenshots/topic_update.png)
 
 ---
 
