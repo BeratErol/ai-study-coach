@@ -71,16 +71,22 @@ Bu hafta projenin backend altyapısı oluşturulmuş ve veritabanı ile entegras
 ### ⚙️ Yapılan İşlemler
 
 * `.NET Web API` projesi oluşturuldu
+
 * PostgreSQL için gerekli paketler eklendi
 
   * `Npgsql.EntityFrameworkCore.PostgreSQL`
   * `Microsoft.EntityFrameworkCore.Design`
+
 * Veritabanı varlıkları (Entities) oluşturuldu:
 
   * User, Lesson, Topic, StudySession, ExamResult
+
 * `AppDbContext` yapılandırıldı
+
 * Fluent API ile tablo ve sütun eşleştirmeleri yapıldı
+
 * PostgreSQL bağlantı ayarları `appsettings.json` içine eklendi
+
 * İlk migration (`InitialCreate`) oluşturuldu
 
 ---
@@ -92,40 +98,86 @@ Bu hafta projenin güvenlik altyapısı kurulmuş ve veritabanı canlıya alınm
 ### ⚙️ Yapılan İşlemler
 
 * **PostgreSQL Servis Yapılandırması:** Yerel sunucuda PostgreSQL servisi kuruldu, `initdb` ve `locale` ayarları yapılandırılarak veritabanı motoru aktif edildi.
+
 * **Kullanıcı Kayıt ve Giriş (Auth):**
+
   * `BCrypt.Net-Next` kütüphanesi kullanılarak şifre güvenliği (hashing) sağlandı.
   * JWT (JSON Web Token) tabanlı kimlik doğrulama sistemi entegre edildi.
+
 * **Veritabanı Şeması ve Migrations:**
+
   * Özel Enum tipleri (`calisma_tipi`) için PostgreSQL uyumlu yapılandırmalar yapıldı.
   * `Fluent API` ve `HasDefaultValueSql` kullanılarak veritabanı seviyesinde varsayılan değerler atandı.
   * `InitialCreate` migration'ı başarıyla uygulanarak tablolar oluşturuldu.
+
 * **API Testleri:**
+
   * Swagger UI üzerinden `Register` ve `Login` endpoint'leri test edildi.
   * Başarıyla ilk kullanıcı kaydedildi ve JWT Token üretimi doğrulandı.
+
+---
+
+## ✅ 4. Hafta — Ders ve Konu Yönetimi (CRUD)
+
+Bu hafta kullanıcıların çalışma süreçlerini yönetecek temel modüller ve veri izolasyon mantığı geliştirilmiştir.
+
+### ⚙️ Yapılan İşlemler
+
+* **Mimari Geliştirmeler:**
+  Servis Katmanı (Service Layer) ve DTO (Data Transfer Object) yapısı kurularak iş mantığı API katmanından ayrıştırıldı.
+
+* **Ders ve Konu CRUD İşlemleri:**
+
+  * Kullanıcıların kendi derslerini eklemesi, listelemesi ve yönetmesi sağlandı.
+  * Derslere bağlı konular oluşturma ve konuların "Tamamlandı" durumunu güncelleme özelliği eklendi.
+
+* **Veri İzolasyonu ve Güvenlik:**
+
+  * Tüm endpoint'ler `[Authorize]` ile korunarak sadece giriş yapmış kullanıcıların erişimine açıldı.
+  * Kullanıcıların sadece kendi `UserId`'lerine ait ders ve konuları görebilmesi/düzenleyebilmesi için filtreleme mantığı eklendi.
+
+* **Bağımlılık Enjeksiyonu (Dependency Injection):**
+  `ILessonService` ve `ITopicService` yapıları `Program.cs` üzerinde yapılandırıldı.
 
 ### 📂 Eklenen Klasörler ve İçerikler
 
 #### 📁 `Backend/`
 
-* `Controllers/AuthController.cs` → Kayıt ve giriş işlemlerini yöneten API uç noktaları.
-* `Services/AuthService.cs` → Şifre doğrulama ve Token üretim mantığı.
-* `DTOs/` → Veri transfer nesneleri (UserRegisterDto, UserLoginDto).
-
-## 🖼 Ekran Görüntüleri
-
-### ✅ Başarılı Giriş Testi
-
-![Başarılı Giriş Testi](docs/screenshots/login_success.png)
-
-Sistem, PostgreSQL veritabanı ile tam entegre çalışmakta olup, JWT tabanlı yetkilendirme başarıyla test edilmiştir.
+* `Controllers/LessonController.cs` & `TopicController.cs`
+* `Services/LessonService.cs` & `TopicService.cs`
+* `DTOs/LessonDto.cs` & `TopicDto.cs`
 
 ---
 
-## 🚀 Sonraki Adımlar (4. Hafta)
+## 🖼 Ekran Görüntüleri
 
-* **Ders ve Konu Yönetimi:** Kullanıcıların kendi derslerini ve konularını ekleyebileceği CRUD işlemlerinin yazılması.
-* **Yetkilendirme (Authorization):** Sadece giriş yapmış kullanıcıların kendi verilerine erişebilmesini sağlayacak `[Authorize]` filtrelerinin eklenmesi.
-* **Global Error Handling:** API genelinde hata yakalama ve standart raporlama sisteminin kurulması.
+### ✅ Başarılı Giriş (Login)
+![Login Success](login_success.png)
+
+### ✅ Ders Listeleme / Yönetimi
+
+![Lesson](lesson.png)
+
+### ✅ Konu Ekleme
+
+![Topic Add](topic_add.png)
+
+### ✅ Konu Güncelleme
+
+![Topic Update](topic_update.png)
+
+---
+
+## 🚀 Sonraki Adımlar (5. Hafta)
+
+* **Çalışma Kayıtları (Study Sessions):**
+  Pomodoro ve manuel çalışma sürelerinin kaydedilmesi için altyapı oluşturulması.
+
+* **İstatistik Başlangıcı:**
+  Toplam çalışma sürelerinin kullanıcı bazlı hesaplanması.
+
+* **Global Error Handling:**
+  API genelinde merkezi bir hata yakalama sisteminin kurulması.
 
 ---
 
