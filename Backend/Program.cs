@@ -7,10 +7,16 @@ using Microsoft.OpenApi.Models;
 using Npgsql;
 using System.Text;
 
+using System.Text.Json.Serialization;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -52,19 +58,14 @@ if (string.IsNullOrEmpty(connectionString))
     throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 }
 
-var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-dataSourceBuilder.MapEnum<Backend.Models.StudyType>("calisma_tipi");
-var dataSource = dataSourceBuilder.Build();
-
 builder.Services.AddDbContext<AppDbContext>(options =>
-{
-    options.UseNpgsql(dataSource);
-});
+    options.UseNpgsql(connectionString));
 
 // Register custom services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILessonService, LessonService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
+builder.Services.AddScoped<IStudySessionService, StudySessionService>();
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
