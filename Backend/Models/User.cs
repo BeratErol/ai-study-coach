@@ -15,6 +15,6 @@ namespace Backend.Models
         // Navigation properties
         public ICollection<Lesson> Lessons { get; set; } = new List<Lesson>();
         public ICollection<StudySession> StudySessions { get; set; } = new List<StudySession>();
-        public ICollection<ExamResult> ExamResults { get; set; } = new List<ExamResult>();
+        public ICollection<Exam> Exams { get; set; } = new List<Exam>();
     }
 }

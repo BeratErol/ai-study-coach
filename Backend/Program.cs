@@ -66,6 +66,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ILessonService, LessonService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IStudySessionService, StudySessionService>();
+builder.Services.AddScoped<IExamService, ExamService>();
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");

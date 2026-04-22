@@ -13,7 +13,8 @@ namespace Backend.Data
         public DbSet<Lesson> Lessons { get; set; } = null!;
         public DbSet<Topic> Topics { get; set; } = null!;
         public DbSet<StudySession> StudySessions { get; set; } = null!;
-        public DbSet<ExamResult> ExamResults { get; set; } = null!;
+        public DbSet<Exam> Exams { get; set; } = null!;
+        public DbSet<ExamDetail> ExamDetails { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -24,7 +25,8 @@ namespace Backend.Data
             modelBuilder.Entity<Lesson>().ToTable("dersler");
             modelBuilder.Entity<Topic>().ToTable("konular");
             modelBuilder.Entity<StudySession>().ToTable("calisma_kayitlari");
-            modelBuilder.Entity<ExamResult>().ToTable("deneme_sonuclari");
+            modelBuilder.Entity<Exam>().ToTable("denemeler");
+            modelBuilder.Entity<ExamDetail>().ToTable("deneme_detaylari");
 
             // User configuration
             modelBuilder.Entity<User>(entity =>
@@ -103,23 +105,41 @@ namespace Backend.Data
                 entity.HasIndex(e => e.Date).HasDatabaseName("idx_calisma_tarih");
             });
 
-            // ExamResult configuration
-            modelBuilder.Entity<ExamResult>(entity =>
+            // Exam configuration
+            modelBuilder.Entity<Exam>(entity =>
             {
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.UserId).HasColumnName("kullanici_id").IsRequired();
-                entity.Property(e => e.ExamName).HasColumnName("deneme_adi").IsRequired().HasMaxLength(255);
-                entity.Property(e => e.NetScore).HasColumnName("net_skoru").HasColumnType("numeric(5, 2)").IsRequired();
-                entity.Property(e => e.DetailsJson).HasColumnName("detaylar").HasColumnType("jsonb");
+                entity.Property(e => e.Title).HasColumnName("deneme_adi").IsRequired().HasMaxLength(255);
                 entity.Property(e => e.Date).HasColumnName("tarih").HasDefaultValueSql("NOW()");
+                entity.Property(e => e.Type).HasColumnName("tip").HasColumnType("varchar(50)").IsRequired();
 
                 entity.HasOne(d => d.User)
-                    .WithMany(p => p.ExamResults)
+                    .WithMany(p => p.Exams)
                     .HasForeignKey(d => d.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
                 
                 entity.HasIndex(e => e.UserId).HasDatabaseName("idx_deneme_kullanici");
+            });
+
+            // ExamDetail configuration
+            modelBuilder.Entity<ExamDetail>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.ExamId).HasColumnName("deneme_id").IsRequired();
+                entity.Property(e => e.LessonName).HasColumnName("ders_adi").IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Correct).HasColumnName("dogru").IsRequired();
+                entity.Property(e => e.Incorrect).HasColumnName("yanlis").IsRequired();
+                entity.Property(e => e.Net).HasColumnName("net").HasColumnType("numeric(5, 2)").IsRequired();
+
+                entity.HasOne(d => d.Exam)
+                    .WithMany(p => p.ExamDetails)
+                    .HasForeignKey(d => d.ExamId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                
+                entity.HasIndex(e => e.ExamId).HasDatabaseName("idx_deneme_detay_sinav");
             });
         }
     }
