@@ -79,6 +79,7 @@ builder.Services.AddScoped<ILessonService, LessonService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IStudySessionService, StudySessionService>();
 builder.Services.AddScoped<IExamService, ExamService>();
+builder.Services.AddScoped<IUserProfileService, UserProfileService>();
 builder.Services.AddHttpClient<IAiService, AiService>();
 
 // Configure JWT Authentication
@@ -126,5 +127,12 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.MapGet("/", () => "AI Study Coach API is running!");
+
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await DemoSeeder.SeedAsync(db);
+}
 
 app.Run();

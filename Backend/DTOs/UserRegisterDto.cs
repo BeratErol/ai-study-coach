@@ -4,7 +4,6 @@ namespace Backend.DTOs
 {
     public class UserRegisterDto
     {
-        [Required]
         [MaxLength(255)]
         public string FullName { get; set; } = string.Empty;
 
@@ -16,5 +15,8 @@ namespace Backend.DTOs
         [Required]
         [MinLength(6)]
         public string Password { get; set; } = string.Empty;
+
+        [MaxLength(20)]
+        public string? TargetExam { get; set; }
     }
 }

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'live_room_screen.dart';
 
 class LiveSessionsScreen extends StatelessWidget {
-  const LiveSessionsScreen({Key? key}) : super(key: key);
+  const LiveSessionsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -74,7 +75,7 @@ class LiveSessionsScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: const Color(0x0D000000),
                           blurRadius: 10,
                           offset: const Offset(0, 5),
                         )
@@ -85,7 +86,7 @@ class LiveSessionsScreen extends StatelessWidget {
                       leading: Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: room['color'].withOpacity(0.1),
+                          color: (room['color'] as Color).withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(room['icon'], color: room['color']),
@@ -105,17 +106,23 @@ class LiveSessionsScreen extends StatelessWidget {
                               style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w500),
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              '• ${room['subtitle']}',
-                              style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                            Expanded(
+                              child: Text(
+                                '• ${room['subtitle']}',
+                                style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ],
                         ),
                       ),
                       trailing: ElevatedButton(
                         onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('${room['title']} odasına katılıyorsunuz... (Çok Yakında)')),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => LiveRoomScreen(room: room),
+                            ),
                           );
                         },
                         style: ElevatedButton.styleFrom(

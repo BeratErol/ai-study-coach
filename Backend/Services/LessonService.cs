@@ -23,7 +23,14 @@ namespace Backend.Services
                     Id = l.Id,
                     UserId = l.UserId,
                     Name = l.Name,
-                    ColorCode = l.ColorCode
+                    ColorCode = l.ColorCode,
+                    PlannedDate = l.PlannedDate,
+                    Topics = l.Topics.Select(t => new TopicDto {
+                        Id = t.Id,
+                        LessonId = t.LessonId,
+                        Name = t.Name,
+                        IsCompleted = t.IsCompleted
+                    }).ToList()
                 })
                 .ToListAsync();
         }
@@ -31,6 +38,7 @@ namespace Backend.Services
         public async Task<LessonDto?> GetLessonByIdAsync(int lessonId, int userId)
         {
             var lesson = await _context.Lessons
+                .Include(l => l.Topics)
                 .FirstOrDefaultAsync(l => l.Id == lessonId && l.UserId == userId);
 
             if (lesson == null) return null;
@@ -40,7 +48,14 @@ namespace Backend.Services
                 Id = lesson.Id,
                 UserId = lesson.UserId,
                 Name = lesson.Name,
-                ColorCode = lesson.ColorCode
+                ColorCode = lesson.ColorCode,
+                PlannedDate = lesson.PlannedDate,
+                Topics = lesson.Topics.Select(t => new TopicDto {
+                    Id = t.Id,
+                    LessonId = t.LessonId,
+                    Name = t.Name,
+                    IsCompleted = t.IsCompleted
+                }).ToList()
             };
         }
 
@@ -50,7 +65,8 @@ namespace Backend.Services
             {
                 UserId = userId,
                 Name = dto.Name,
-                ColorCode = dto.ColorCode
+                ColorCode = dto.ColorCode ?? "#3498db",
+                PlannedDate = dto.PlannedDate
             };
 
             _context.Lessons.Add(lesson);
@@ -61,7 +77,8 @@ namespace Backend.Services
                 Id = lesson.Id,
                 UserId = lesson.UserId,
                 Name = lesson.Name,
-                ColorCode = lesson.ColorCode
+                ColorCode = lesson.ColorCode,
+                PlannedDate = lesson.PlannedDate
             };
         }
 
@@ -74,6 +91,7 @@ namespace Backend.Services
 
             lesson.Name = dto.Name;
             lesson.ColorCode = dto.ColorCode;
+            lesson.PlannedDate = dto.PlannedDate;
 
             await _context.SaveChangesAsync();
 
@@ -82,7 +100,8 @@ namespace Backend.Services
                 Id = lesson.Id,
                 UserId = lesson.UserId,
                 Name = lesson.Name,
-                ColorCode = lesson.ColorCode
+                ColorCode = lesson.ColorCode,
+                PlannedDate = lesson.PlannedDate
             };
         }
 

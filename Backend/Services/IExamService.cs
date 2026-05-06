@@ -9,5 +9,6 @@ namespace Backend.Services
         Task<ExamResponseDto> AddExamAsync(int userId, CreateExamDto dto);
         Task<IEnumerable<ExamResponseDto>> GetExamResultsAsync(int userId);
         Task<ExamAnalysisDto> GetExamAnalysisAsync(int userId);
+        Task<string> GetAiRecommendationAsync(int userId);
     }
 }

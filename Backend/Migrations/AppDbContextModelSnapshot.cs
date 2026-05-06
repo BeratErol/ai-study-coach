@@ -17,7 +17,7 @@ namespace Backend.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.2")
+                .HasAnnotation("ProductVersion", "9.0.4")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -121,6 +121,9 @@ namespace Backend.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("ders_adi");
+
+                    b.Property<DateTime?>("PlannedDate")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("UserId")
                         .HasColumnType("integer")
@@ -259,6 +262,135 @@ namespace Backend.Migrations
                     b.ToTable("kullanicilar", (string)null);
                 });
 
+            modelBuilder.Entity("Backend.Models.UserProfile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("olusturulma_tarihi")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("EducationLevel")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("egitim_seviyesi");
+
+                    b.Property<DateTime?>("ExamDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sinav_tarihi");
+
+                    b.Property<string>("Gender")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("cinsiyet");
+
+                    b.Property<bool>("HasWeekdaySchool")
+                        .HasColumnType("boolean")
+                        .HasColumnName("hafta_ici_okul");
+
+                    b.Property<bool>("HasWeekendCourse")
+                        .HasColumnType("boolean")
+                        .HasColumnName("hafta_sonu_kurs");
+
+                    b.Property<string>("OffDaysJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("tatil_gunleri_json");
+
+                    b.Property<string>("StrongSubjectsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("guclu_dersler_json");
+
+                    b.Property<string>("StudyType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("calisma_tipi");
+
+                    b.Property<string>("TargetExam")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("hedef_sinav");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("guncelleme_tarihi")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("kullanici_id");
+
+                    b.Property<string>("WeakSubjectsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("zayif_dersler_json");
+
+                    b.Property<string>("WeekdayEndTime")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("hafta_ici_bitis");
+
+                    b.Property<string>("WeekdayLatestTime")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("hafta_ici_en_gec");
+
+                    b.Property<string>("WeekdayStartTime")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("hafta_ici_baslangic");
+
+                    b.Property<int>("WeekdayStudyHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("hafta_ici_ders_saati");
+
+                    b.Property<string>("WeekendLatestTime")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("hafta_sonu_en_gec");
+
+                    b.Property<string>("WeekendStartTime")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("hafta_sonu_baslangic");
+
+                    b.Property<int>("WeekendStudyHours")
+                        .HasColumnType("integer")
+                        .HasColumnName("hafta_sonu_ders_saati");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("idx_kullanici_profil_unique");
+
+                    b.ToTable("kullanici_profilleri", (string)null);
+                });
+
             modelBuilder.Entity("Backend.Models.Exam", b =>
                 {
                     b.HasOne("Backend.Models.User", "User")
@@ -320,6 +452,17 @@ namespace Backend.Migrations
                         .IsRequired();
 
                     b.Navigation("Lesson");
+                });
+
+            modelBuilder.Entity("Backend.Models.UserProfile", b =>
+                {
+                    b.HasOne("Backend.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Backend.Models.Exam", b =>

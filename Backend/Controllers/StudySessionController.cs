@@ -56,6 +56,22 @@ namespace Backend.Controllers
             return Ok(summary);
         }
 
+        [HttpGet("weekly-summary")]
+        public async Task<IActionResult> GetWeeklySummary()
+        {
+            var userId = GetUserId();
+            var summary = await _sessionService.GetWeeklySummaryAsync(userId);
+            return Ok(summary);
+        }
+
+        [HttpGet("monthly-heatmap")]
+        public async Task<IActionResult> GetMonthlyHeatmap()
+        {
+            var userId = GetUserId();
+            var heatmap = await _sessionService.GetMonthlyHeatmapAsync(userId);
+            return Ok(heatmap);
+        }
+
         [HttpDelete("clear")]
         public async Task<IActionResult> ClearAllSessions()
         {

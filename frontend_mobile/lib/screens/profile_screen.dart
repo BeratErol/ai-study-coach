@@ -1,200 +1,200 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:go_router/go_router.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/app_theme.dart';
 import '../main.dart';
-import 'login_screen.dart';
 
-class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+class ProfileScreen extends ConsumerStatefulWidget {
+  const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _storage = const FlutterSecureStorage();
-  String _userName = 'Yükleniyor...';
+  String _userName  = 'Yükleniyor...';
   String _userEmail = 'Yükleniyor...';
-  bool _isDarkMode = false;
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
-    _loadThemeMode();
   }
 
-  Future<void> _loadThemeMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _isDarkMode = prefs.getBool('isDarkMode') ?? false;
-    });
+  Future<void> _loadUserProfile() async {
+    final token = await _storage.read(key: 'jwt_token');
+    if (token != null && !JwtDecoder.isExpired(token)) {
+      final payload = JwtDecoder.decode(token);
+      final name  = payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name']
+              as String? ??
+          payload['name'] as String? ??
+          'İsimsiz Kullanıcı';
+      final email = payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress']
+              as String? ??
+          payload['email'] as String? ??
+          'E-posta bulunamadı';
+      if (mounted) setState(() { _userName = name; _userEmail = email; });
+    }
   }
 
   Future<void> _toggleDarkMode(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isDarkMode', value);
-    themeNotifier.value = value ? ThemeMode.dark : ThemeMode.light;
-    setState(() {
-      _isDarkMode = value;
-    });
+    ref.read(themeModeProvider.notifier).state =
+        value ? ThemeMode.dark : ThemeMode.light;
   }
 
-  Future<void> _loadUserProfile() async {
-    String? token = await _storage.read(key: 'jwt_token');
-    if (token != null && JwtDecoder.isExpired(token) == false) {
-      Map<String, dynamic> decodedToken = JwtDecoder.decode(token);
-      
-      String? name = decodedToken['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? decodedToken['name'];
-      String? email = decodedToken['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ?? decodedToken['email'];
-      
-      setState(() {
-        _userName = name ?? 'İsimsiz Kullanıcı';
-        _userEmail = email ?? 'E-posta bulunamadı';
-      });
-    }
-  }
-
-  void _logout() async {
+  Future<void> _logout() async {
     await _storage.delete(key: 'jwt_token');
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-      (route) => false,
-    );
+    context.go('/login');
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark =
+        ref.watch(themeModeProvider) == ThemeMode.dark;
+
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
-      appBar: AppBar(
-        title: const Text('Profilim', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.blueAccent,
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Profilim')),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 24),
-              // Profile Avatar
+
+              // Avatar
               Container(
-                width: 120,
-                height: 120,
+                width: 100,
+                height: 100,
                 decoration: BoxDecoration(
-                  color: Colors.blueAccent.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.blueAccent, width: 3),
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.person_rounded,
-                    size: 64,
-                    color: Colors.blueAccent,
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, Color(0xFF7C3AED)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  shape: BoxShape.circle,
                 ),
+                child: const Icon(Icons.person_rounded,
+                    size: 56, color: Colors.white),
               ),
-              const SizedBox(height: 24),
-              
-              // Name and Email
+              const SizedBox(height: 16),
+
               Text(
                 _userName,
                 style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
+                    fontSize: 22, fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Text(
                 _userEmail,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey.shade600,
-                ),
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 36),
 
-              // Settings Card
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 5),
-                    )
-                  ],
-                ),
+              // Settings
+              Card(
                 child: Column(
                   children: [
-                    ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.flag_rounded, color: Colors.orange),
-                      ),
-                      title: const Text('Hedef Sınav', style: TextStyle(fontWeight: FontWeight.w600)),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('YKS 2026', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-                          const SizedBox(width: 8),
-                          Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey.shade400),
-                        ],
-                      ),
-                      onTap: () {
-                        // TODO: Implement Goal Setting
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Hedef sınav belirleme yakında eklenecek!')),
-                        );
-                      },
+                    _SettingsTile(
+                      icon: Icons.edit_calendar_rounded,
+                      iconColor: AppColors.primary,
+                      title: 'Çalışma Programını Güncelle',
+                      subtitle: 'Hedef sınav, çalışma saatleri ve dersler',
+                      onTap: () => context.go('/onboarding'),
                     ),
-                    Divider(height: 1, color: Colors.grey.shade200),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
                     SwitchListTile(
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       secondary: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.blueGrey.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
+                          color: AppColors.primaryO10,
+                          borderRadius: AppRadius.sm,
                         ),
-                        child: const Icon(Icons.dark_mode_rounded, color: Colors.blueGrey),
+                        child: const Icon(Icons.dark_mode_rounded,
+                            color: AppColors.primary),
                       ),
-                      title: const Text('Karanlık Mod', style: TextStyle(fontWeight: FontWeight.w600)),
-                      value: _isDarkMode,
+                      title: const Text('Karanlık Mod',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      value: isDark,
                       onChanged: _toggleDarkMode,
-                      activeColor: Colors.blueAccent,
+                      activeThumbColor: AppColors.primary,
                     ),
-                    Divider(height: 1, color: Colors.grey.shade200),
-                    ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.logout_rounded, color: Colors.red),
-                      ),
-                      title: const Text('Çıkış Yap', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red)),
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    _SettingsTile(
+                      icon: Icons.logout_rounded,
+                      iconColor: AppColors.error,
+                      titleColor: AppColors.error,
+                      title: 'Çıkış Yap',
                       onTap: _logout,
                     ),
                   ],
                 ),
               ),
+
+              const SizedBox(height: 32),
+
+              // App version
+              const Text('AI Study Coach v1.0.0',
+                  style: TextStyle(
+                      color: AppColors.textHint, fontSize: 12)),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String? subtitle;
+  final Color? titleColor;
+  final VoidCallback? onTap;
+
+  const _SettingsTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    this.subtitle,
+    this.titleColor,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: iconColor.withValues(alpha: 0.1),
+          borderRadius: AppRadius.sm,
+        ),
+        child: Icon(icon, color: iconColor),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(fontWeight: FontWeight.w600, color: titleColor),
+      ),
+      subtitle: subtitle != null
+          ? Text(subtitle!,
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.textSecondary))
+          : null,
+      trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
+      onTap: onTap,
     );
   }
 }

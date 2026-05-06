@@ -15,6 +15,7 @@ namespace Backend.Data
         public DbSet<StudySession> StudySessions { get; set; } = null!;
         public DbSet<Exam> Exams { get; set; } = null!;
         public DbSet<ExamDetail> ExamDetails { get; set; } = null!;
+        public DbSet<UserProfile> UserProfiles { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -122,6 +123,41 @@ namespace Backend.Data
                 
                 entity.HasIndex(e => e.UserId).HasDatabaseName("idx_deneme_kullanici");
             });
+
+            // UserProfile configuration
+            modelBuilder.Entity<UserProfile>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.UserId).HasColumnName("kullanici_id").IsRequired();
+                entity.Property(e => e.Gender).HasColumnName("cinsiyet").HasMaxLength(20);
+                entity.Property(e => e.EducationLevel).HasColumnName("egitim_seviyesi").HasMaxLength(50);
+                entity.Property(e => e.TargetExam).HasColumnName("hedef_sinav").HasMaxLength(50);
+                entity.Property(e => e.ExamDate).HasColumnName("sinav_tarihi");
+                entity.Property(e => e.StudyType).HasColumnName("calisma_tipi").HasMaxLength(20);
+                entity.Property(e => e.HasWeekdaySchool).HasColumnName("hafta_ici_okul");
+                entity.Property(e => e.WeekdayStartTime).HasColumnName("hafta_ici_baslangic").HasMaxLength(10);
+                entity.Property(e => e.WeekdayEndTime).HasColumnName("hafta_ici_bitis").HasMaxLength(10);
+                entity.Property(e => e.WeekdayStudyHours).HasColumnName("hafta_ici_ders_saati");
+                entity.Property(e => e.HasWeekendCourse).HasColumnName("hafta_sonu_kurs");
+                entity.Property(e => e.WeekendStartTime).HasColumnName("hafta_sonu_baslangic").HasMaxLength(10);
+                entity.Property(e => e.WeekendStudyHours).HasColumnName("hafta_sonu_ders_saati");
+                entity.Property(e => e.WeekdayLatestTime).HasColumnName("hafta_ici_en_gec").HasMaxLength(10);
+                entity.Property(e => e.WeekendLatestTime).HasColumnName("hafta_sonu_en_gec").HasMaxLength(10);
+                entity.Property(e => e.OffDaysJson).HasColumnName("tatil_gunleri_json").HasDefaultValue("[]");
+                entity.Property(e => e.StrongSubjectsJson).HasColumnName("guclu_dersler_json").HasDefaultValue("[]");
+                entity.Property(e => e.WeakSubjectsJson).HasColumnName("zayif_dersler_json").HasDefaultValue("[]");
+                entity.Property(e => e.CreatedAt).HasColumnName("olusturulma_tarihi").HasDefaultValueSql("NOW()");
+                entity.Property(e => e.UpdatedAt).HasColumnName("guncelleme_tarihi").HasDefaultValueSql("NOW()");
+
+                entity.HasOne(d => d.User)
+                    .WithMany()
+                    .HasForeignKey(d => d.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("idx_kullanici_profil_unique");
+            });
+            modelBuilder.Entity<UserProfile>().ToTable("kullanici_profilleri");
 
             // ExamDetail configuration
             modelBuilder.Entity<ExamDetail>(entity =>

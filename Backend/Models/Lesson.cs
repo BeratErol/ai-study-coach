@@ -8,6 +8,7 @@ namespace Backend.Models
         public int UserId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string ColorCode { get; set; } = "#3498db";
+        public DateTime? PlannedDate { get; set; }
 
         // Navigation properties
         public User User { get; set; } = null!;

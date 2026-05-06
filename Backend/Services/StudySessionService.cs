@@ -101,5 +101,47 @@ namespace Backend.Services
                 await _context.SaveChangesAsync();
             }
         }
+
+        public async Task<List<StudySession>> GetUserSessionsAsync(int userId)
+        {
+            return await _context.StudySessions
+                .Where(s => s.UserId == userId)
+                .OrderByDescending(s => s.Date)
+                .ToListAsync();
+        }
+
+        public async Task<WeeklyStudySummaryDto> GetWeeklySummaryAsync(int userId)
+        {
+            var weekStart = DateTime.UtcNow.Date.AddDays(-(int)DateTime.UtcNow.DayOfWeek + (int)DayOfWeek.Monday);
+            var sessions = await _context.StudySessions
+                .Where(s => s.UserId == userId && s.Date >= weekStart)
+                .ToListAsync();
+
+            return new WeeklyStudySummaryDto
+            {
+                TotalMinutes  = sessions.Sum(s => s.DurationMinutes),
+                TotalSessions = sessions.Count,
+                PomodoroCount = sessions.Count(s => s.Type == "pomodoro")
+            };
+        }
+
+        public async Task<List<DailyActivityDto>> GetMonthlyHeatmapAsync(int userId)
+        {
+            var since = DateTime.UtcNow.Date.AddDays(-29);
+            var sessions = await _context.StudySessions
+                .Where(s => s.UserId == userId && s.Date >= since)
+                .ToListAsync();
+
+            return sessions
+                .GroupBy(s => s.Date.Date)
+                .Select(g => new DailyActivityDto
+                {
+                    Date         = g.Key.ToString("yyyy-MM-dd"),
+                    TotalMinutes = g.Sum(s => s.DurationMinutes),
+                    SessionCount = g.Count()
+                })
+                .OrderBy(d => d.Date)
+                .ToList();
+        }
     }
 }

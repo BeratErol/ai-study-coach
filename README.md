@@ -1,185 +1,142 @@
+# AI Study Coach
+
+Kişiselleştirilmiş yapay zeka destekli çalışma koçu. Öğrencinin sınav hedefine, güçlü/zayıf derslerine ve günlük müsaitliğine göre haftalık program oluşturur; çalışma süreci boyunca rehberlik eder.
+
+> LGS, TYT/AYT, KPSS, YDS ve diğer sınavlara hazırlanan öğrenciler için.
 
 ---
 
-# 📘 AI Study Coach
+## Özellikler
 
-## 📌 Proje Hakkında
+### Akıllı Program Yönetimi
+- Onboarding sırasında seçilen sınav türü, zayıf/güçlü dersler ve haftalık çalışma saatlerine göre otomatik haftalık plan üretimi
+- Zayıf dersler öncelikli (75/25 dağılımı), mola blokları dahil
+- Görev türü rotasyonu: zayıf dersler konu anlatımı → soru çözümü, güçlü dersler soru çözümü → konu anlatımı şeklinde dönüşümlü ilerler
+- Haftalık programa konu atama (her bloğa ayrı konu)
+- Manuel görev ekleme: alanındaki tüm dersler arasından seçim
 
-**AI Study Coach**, öğrencilerin ders çalışma süreçlerini daha planlı, verimli ve sürdürülebilir hale getirmeyi amaçlayan yapay zekâ destekli bir ders planlama ve koçluk sistemidir.
+### Çalışma Oturumu
+- Gerçek zamanlı geri sayım zamanlayıcısı, görsel ilerleme halkası
+- Ortam sesi seçici (Hafif Yağmur, Ateş, Orman, Kuş, Kafe vb. — arka planda stream)
+- Acil mola modu (5 dk)
+- Oturum tamamlandığında görev otomatik işaretleme
 
-Sistem; kullanıcıların hedeflerini, derslerini ve performans verilerini analiz ederek kişiye özel çalışma planları oluşturur. Çalışma süreci boyunca elde edilen veriler doğrultusunda planlar dinamik olarak güncellenir.
+### Takip ve Analiz
+- Deneme sınavı kaydı, net hesaplama (−0.25 yanış), ders bazlı kırılım
+- Haftalık çalışma özeti ve trend grafikleri
+- Tamamlanan görev sayacı
 
-Proje, web ve mobil platformlarda çalışacak şekilde ortak bir backend API altyapısı ile geliştirilmektedir.
-
----
-
-## 🎯 Projenin Amaçları
-
-* Kişiye özel çalışma planı oluşturmak
-* Günlük ve haftalık çalışma takibi yapmak
-* Pomodoro yöntemi ile süre yönetimi sağlamak
-* Deneme sınavı sonuçlarını analiz etmek
-* Zayıf konuları tespit ederek öneriler sunmak
-* Yapay zekâ ile adaptif (uyarlanabilir) çalışma stratejisi geliştirmek
-
----
-
-## 🛠 Planlanan Özellikler
-
-* Ders ve konu bazlı planlama sistemi
-* Günlük / haftalık takvim görünümü
-* Pomodoro çalışma zamanlayıcısı
-* Deneme sınavı sonuç girişi ve analiz paneli
-* Performans grafikleri
-* AI destekli öneri ve plan güncelleme sistemi
-* Web ve mobil senkronizasyon
+### Genel
+- JWT tabanlı kimlik doğrulama; her kullanıcı verisi izole
+- Koyu tema çalışma ekranı, açık tema dashboard
+- Hızlı not alma
+- Çevrimdışı çalışma desteği (local storage yedek)
 
 ---
 
-## 🏗 Geliştirme Süreci
+## Teknoloji Yığını
 
-Proje yaklaşık **10–12 haftalık** bir geliştirme planı doğrultusunda ilerlemektedir. Her hafta düzenli olarak GitHub üzerinden ilerleme paylaşılacaktır.
-
----
-
-## ✅ 1. Hafta — Analiz ve Tasarım
-
-Bu hafta proje için temel analiz ve sistem tasarımı tamamlanmıştır.
-
-### 📂 Oluşturulan Klasörler ve İçerikler
-
-#### 📁 `database/`
-
-* `diagram.dbml` → Veritabanı tasarımının DBML formatında tanımı
-* `ER_diagram.png` → Entity-Relationship diyagramı
-* `schema.sql` → Veritabanı şema yapısı
-
-#### 📁 `docs/`
-
-* `Analiz_ve_Tasarim.md`
-* `Kullanıcı_Senaryoları.pdf`
-* `Problem_Tanımı_ve_Gereksinim_Analizi.pdf`
-* `Proje_Dökümantasyonu.pdf`
-* `Wireframe_ve_Akış_Planı.pdf`
+| Katman | Teknolojiler |
+|--------|-------------|
+| **Backend** | ASP.NET Core 8, Entity Framework Core, PostgreSQL, JWT Bearer, BCrypt |
+| **Mobil** | Flutter 3, Riverpod 2, GoRouter, Dio, audioplayers, fl_chart, SharedPreferences |
+| **Web** | React 18, Vite, TypeScript, Tailwind CSS v4, Recharts, React Router v6 |
 
 ---
 
-## ✅ 2. Hafta — Backend Kurulumu
+## Proje Yapısı
 
-Bu hafta projenin backend altyapısı oluşturulmuş ve veritabanı ile entegrasyonu sağlanmıştır.
-
-### ⚙️ Yapılan İşlemler
-
-* `.NET Web API` projesi oluşturuldu
-
-* PostgreSQL için gerekli paketler eklendi
-
-  * `Npgsql.EntityFrameworkCore.PostgreSQL`
-  * `Microsoft.EntityFrameworkCore.Design`
-
-* Veritabanı varlıkları (Entities) oluşturuldu:
-
-  * User, Lesson, Topic, StudySession, ExamResult
-
-* `AppDbContext` yapılandırıldı
-
-* Fluent API ile tablo ve sütun eşleştirmeleri yapıldı
-
-* PostgreSQL bağlantı ayarları `appsettings.json` içine eklendi
-
-* İlk migration (`InitialCreate`) oluşturuldu
-
----
-
-## ✅ 3. Hafta — Kimlik Doğrulama ve Veritabanı Entegrasyonu
-
-Bu hafta projenin güvenlik altyapısı kurulmuş ve veritabanı canlıya alınmıştır.
-
-### ⚙️ Yapılan İşlemler
-
-* **PostgreSQL Servis Yapılandırması:** Yerel sunucuda PostgreSQL servisi kuruldu, `initdb` ve `locale` ayarları yapılandırılarak veritabanı motoru aktif edildi.
-
-* **Kullanıcı Kayıt ve Giriş (Auth):**
-
-  * `BCrypt.Net-Next` kütüphanesi kullanılarak şifre güvenliği (hashing) sağlandı.
-  * JWT (JSON Web Token) tabanlı kimlik doğrulama sistemi entegre edildi.
-
-* **Veritabanı Şeması ve Migrations:**
-
-  * Özel Enum tipleri (`calisma_tipi`) için PostgreSQL uyumlu yapılandırmalar yapıldı.
-  * `Fluent API` ve `HasDefaultValueSql` kullanılarak veritabanı seviyesinde varsayılan değerler atandı.
-  * `InitialCreate` migration'ı başarıyla uygulanarak tablolar oluşturuldu.
-
-* **API Testleri:**
-
-  * Swagger UI üzerinden `Register` ve `Login` endpoint'leri test edildi.
-  * Başarıyla ilk kullanıcı kaydedildi ve JWT Token üretimi doğrulandı.
+```
+ai-study-coach/
+├── Backend/
+│   ├── Controllers/        # Auth, Lesson, StudySession, Exam, Ai, UserProfile
+│   ├── Data/               # AppDbContext
+│   ├── DTOs/               # Request/Response modelleri
+│   ├── Models/             # EF Core varlıkları
+│   └── Services/           # İş mantığı
+├── frontend_mobile/
+│   ├── lib/
+│   │   ├── core/           # Tema, router, sabitler
+│   │   ├── data/           # Sınav/ders/konu veri tanımları
+│   │   ├── models/         # Veri modelleri
+│   │   ├── providers/      # Riverpod state yönetimi
+│   │   ├── screens/        # Tüm ekranlar
+│   │   ├── services/       # API, plan üretici, token, prefs
+│   │   └── widgets/        # Yeniden kullanılabilir bileşenler
+│   └── assets/
+│       ├── icon/
+│       └── sounds/         # Ortam sesi dosyaları (.mp3)
+└── frontend_web/
+    └── src/
+        ├── components/
+        ├── hooks/
+        └── pages/
+```
 
 ---
 
-## ✅ 4. Hafta — Ders ve Konu Yönetimi (CRUD)
+## Kurulum
 
-Bu hafta kullanıcıların çalışma süreçlerini yönetecek temel modüller ve veri izolasyon mantığı geliştirilmiştir.
+### Gereksinimler
 
-### ⚙️ Yapılan İşlemler
+- .NET 8 SDK
+- PostgreSQL 14+
+- Flutter 3.19+
+- Node.js 20+
 
-* **Mimari Geliştirmeler:**
-  Servis Katmanı (Service Layer) ve DTO (Data Transfer Object) yapısı kurularak iş mantığı API katmanından ayrıştırıldı.
+### Backend
 
-* **Ders ve Konu CRUD İşlemleri:**
+```bash
+cd Backend
 
-  * Kullanıcıların kendi derslerini eklemesi, listelemesi ve yönetmesi sağlandı.
-  * Derslere bağlı konular oluşturma ve konuların "Tamamlandı" durumunu güncelleme özelliği eklendi.
+# appsettings.Development.json oluştur ve doldur
+cp appsettings.json appsettings.Development.json
+# ConnectionStrings.DefaultConnection → PostgreSQL bağlantı dizesi
+# JwtSettings.Secret → rastgele uzun anahtar
 
-* **Veri İzolasyonu ve Güvenlik:**
+dotnet ef database update
+dotnet run
+# → https://localhost:5001
+```
 
-  * Tüm endpoint'ler `[Authorize]` ile korunarak sadece giriş yapmış kullanıcıların erişimine açıldı.
-  * Kullanıcıların sadece kendi `UserId`'lerine ait ders ve konuları görebilmesi/düzenleyebilmesi için filtreleme mantığı eklendi.
+### Flutter Mobil
 
-* **Bağımlılık Enjeksiyonu (Dependency Injection):**
-  `ILessonService` ve `ITopicService` yapıları `Program.cs` üzerinde yapılandırıldı.
+```bash
+cd frontend_mobile
+flutter pub get
+flutter run
+```
 
-### 📂 Eklenen Klasörler ve İçerikler
+`lib/services/api_service.dart` içindeki `baseUrl`'i backend adresinizle güncelleyin.
 
-#### 📁 `Backend/`
+### Web Panosu
 
-* `Controllers/LessonController.cs` & `TopicController.cs`
-* `Services/LessonService.cs` & `TopicService.cs`
-* `DTOs/LessonDto.cs` & `TopicDto.cs`
-
----
-
-## 🖼 Ekran Görüntüleri
-
-### ✅ Başarılı Giriş (Login)
-![Login Success](docs/screenshots/login_success.png)
-
-### ✅ Ders Listeleme / Yönetimi
-![Lesson](docs/screenshots/lessons.png)
-
-### ✅ Konu Ekleme
-![Topic Add](docs/screenshots/topic_add.png)
-
-### ✅ Konu Güncelleme
-![Topic Update](docs/screenshots/topic_update.png)
+```bash
+cd frontend_web
+npm install
+npm run dev
+# → http://localhost:5173
+```
 
 ---
 
-## 🚀 Sonraki Adımlar (5. Hafta)
+## API Özeti
 
-* **Çalışma Kayıtları (Study Sessions):**
-  Pomodoro ve manuel çalışma sürelerinin kaydedilmesi için altyapı oluşturulması.
-
-* **İstatistik Başlangıcı:**
-  Toplam çalışma sürelerinin kullanıcı bazlı hesaplanması.
-
-* **Global Error Handling:**
-  API genelinde merkezi bir hata yakalama sisteminin kurulması.
-
----
-
-## 📌 Not
-
-Bu proje aktif olarak geliştirilmektedir ve her hafta yeni özellikler eklenmeye devam edecektir.
+| Yöntem | Endpoint | Açıklama |
+|--------|----------|----------|
+| POST | `/api/Auth/register` | Kayıt |
+| POST | `/api/Auth/login` | Giriş → JWT |
+| GET/POST | `/api/UserProfile` | Onboarding profili |
+| GET/POST/DELETE | `/api/Lesson` | Ders CRUD |
+| GET/POST | `/api/StudySession` | Çalışma oturumu |
+| GET | `/api/StudySession/weekly-summary` | Haftalık özet |
+| GET | `/api/StudySession/monthly-heatmap` | Aylık ısı haritası |
+| GET/POST | `/api/Exam` | Deneme sınavı |
+| GET | `/api/Exam/analysis` | Sınav trend analizi |
+| POST | `/api/Ai/coach-message` | AI koç mesajı |
 
 ---
+
+## Lisans
+
+MIT

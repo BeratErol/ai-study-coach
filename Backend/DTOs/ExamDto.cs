@@ -41,12 +41,30 @@ namespace Backend.DTOs
     {
         public List<LessonAverageDto> LessonAverages { get; set; } = new();
         public List<ExamProgressDto> ProgressOverTime { get; set; } = new();
+
+        // Enriched fields
+        public string? BestLesson { get; set; }
+        public string? WorstLesson { get; set; }
+        public decimal BestNet { get; set; }
+        public decimal WorstNet { get; set; }
+        public string Trend { get; set; } = "stable"; // improving | declining | stable
+        public int TotalExams { get; set; }
+        public decimal AverageNet { get; set; }
+        public List<ByLessonDto> ByLesson { get; set; } = new();
     }
 
     public class LessonAverageDto
     {
         public string LessonName { get; set; } = string.Empty;
         public decimal AverageNet { get; set; }
+    }
+
+    public class ByLessonDto
+    {
+        public string Name { get; set; } = string.Empty;
+        public decimal AverageNet { get; set; }
+        public int Correct { get; set; }
+        public int Incorrect { get; set; }
     }
 
     public class ExamProgressDto

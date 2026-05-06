@@ -25,4 +25,18 @@ namespace Backend.DTOs
     {
         public int TotalDurationMinutes { get; set; }
     }
+
+    public class WeeklyStudySummaryDto
+    {
+        public int TotalMinutes { get; set; }
+        public int TotalSessions { get; set; }
+        public int PomodoroCount { get; set; }
+    }
+
+    public class DailyActivityDto
+    {
+        public string Date { get; set; } = string.Empty;
+        public int TotalMinutes { get; set; }
+        public int SessionCount { get; set; }
+    }
 }

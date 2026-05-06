@@ -6,5 +6,8 @@ namespace Backend.Services
     public interface IAiService
     {
         Task<AiPlanResponseDto> GenerateStudyPlanAsync(AiPlanRequestDto request);
+        Task<string> GenerateTextRecommendationAsync(string prompt);
+        Task<List<AiPlanResponseDto>> OptimizePlanAsync(int userId, ExamAnalysisDto analysis);
+        Task<DashboardCoachResponseDto> GenerateDashboardCoachAsync(DashboardCoachRequestDto context);
     }
 }

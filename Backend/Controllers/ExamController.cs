@@ -48,5 +48,13 @@ namespace Backend.Controllers
             var analysis = await _examService.GetExamAnalysisAsync(userId);
             return Ok(analysis);
         }
+
+        [HttpGet("recommendation")]
+        public async Task<IActionResult> GetRecommendation()
+        {
+            var userId = GetUserId();
+            var recommendation = await _examService.GetAiRecommendationAsync(userId);
+            return Ok(new { recommendation });
+        }
     }
 }
