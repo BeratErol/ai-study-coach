@@ -14,15 +14,18 @@ class _ExamOption {
 const _examsByLevel = {
   'ortaokul': [
     _ExamOption('📋', 'LGS', 'Liselere Geçiş Sınavı (8. Sınıf)', 'LGS'),
+    _ExamOption('🏫', 'Okul Sınavlarım', 'Yazılı sınavlar için hazırlan', 'OkulSinavi'),
   ],
   'lise': [
     _ExamOption('🎓', 'YKS', 'Yükseköğretim Kurumları Sınavı', 'YKS'),
+    _ExamOption('🏫', 'Okul Sınavlarım', 'Yazılı sınavlar için hazırlan', 'OkulSinavi'),
   ],
   'universite': [
     _ExamOption('🏢', 'KPSS', 'Kamu Personeli Seçme Sınavı', 'KPSS'),
     _ExamOption('📐', 'ALES', 'Akademik Personel ve Lisansüstü Eğitimi Giriş Sınavı', 'ALES'),
     _ExamOption('🌐', 'YDS', 'Yabancı Dil Sınavı', 'YDS'),
     _ExamOption('👩‍🏫', 'Öğretmenlik', 'AGS ve ÖABT', 'Öğretmenlik'),
+    _ExamOption('🏛️', 'Okul Sınavlarım', 'Vize/Final sınavları için hazırlan', 'OkulSinavi'),
   ],
 };
 
@@ -41,15 +44,15 @@ class Step3TargetExam extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: const [
-              Text('🎯', style: TextStyle(fontSize: 26)),
-              SizedBox(width: 8),
+            children: [
+              const Text('🎯', style: TextStyle(fontSize: 26)),
+              const SizedBox(width: 8),
               Text(
                 'Hedefin Ne?',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                 ),
               ),
             ],
@@ -59,8 +62,8 @@ class Step3TargetExam extends ConsumerWidget {
             data.educationLevel == 'ortaokul'
                 ? 'Ortaokul için uygun hedefler'
                 : 'Sınav hedefini seç',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodySmall?.color,
               fontSize: 14,
             ),
           ),
@@ -105,10 +108,10 @@ class _ExamCard extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFEEF2FF) : Colors.white,
+          color: selected ? AppColors.primary.withValues(alpha: 0.15) : Theme.of(context).cardColor,
           borderRadius: AppRadius.lg,
           border: Border.all(
-            color: selected ? AppColors.primary : AppColors.borderLight,
+            color: selected ? AppColors.primary : Theme.of(context).dividerColor,
             width: selected ? 2 : 1,
           ),
         ),
@@ -125,14 +128,14 @@ class _ExamCard extends StatelessWidget {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
-                      color: selected ? AppColors.primary : AppColors.textPrimary,
+                      color: selected ? AppColors.primary : Theme.of(context).textTheme.bodyLarge?.color,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     option.subtitle,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodySmall?.color,
                       fontSize: 13,
                     ),
                   ),

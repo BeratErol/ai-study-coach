@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -34,7 +35,7 @@ namespace Backend.Services
                 };
             }
 
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={_apiKey}";
+            var url = $"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={_apiKey}";
 
             var systemPrompt = "Sen bir AI eğitim koçusun. Kullanıcının hedefine göre şu JSON formatında bir plan döndür: {\"SuggestedName\": \"Ders Adı (Örn: Mat-Türev)\", \"SuggestedDifficulty\": \"Kolay\" veya \"Orta\" veya \"Zor\", \"RecommendedHours\": 2.0 (Double türünde, saat cinsinden), \"Advice\": \"Kısa motivasyon ve tavsiye\"}. Sadece ama sadece geçerli bir JSON objesi döndür, markdown tagleri (```json vb.) kullanma.";
 
@@ -90,7 +91,7 @@ namespace Backend.Services
                 return "AI Önerisi: Son denemelerinizde eksikleriniz var, bu alanlara ağırlık vermelisiniz.";
             }
 
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={_apiKey}";
+            var url = $"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={_apiKey}";
 
             var systemPrompt = "Sen bir AI eğitim koçusun. Öğrencinin deneme sonuçlarına göre ona cesaret verici, kısa (1-2 cümle) ve hedefe yönelik bir tavsiye metni yaz.";
 
@@ -161,7 +162,7 @@ namespace Backend.Services
                 "Son denemeler:\n" +
                 string.Join("\n", examLines);
 
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={_apiKey}";
+            var url = $"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={_apiKey}";
 
             var payload = new
             {
@@ -216,6 +217,151 @@ namespace Backend.Services
                 "Bir deneme sorusu çöz"
             }
         };
+
+        public async Task<ChatResponseDto> ChatAsync(ChatRequestDto request)
+        {
+            var url = $"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={_apiKey}";
+
+            var weakStr   = request.WeakLessons.Any()   ? string.Join(", ", request.WeakLessons)   : "-";
+            var strongStr = request.StrongLessons.Any() ? string.Join(", ", request.StrongLessons) : "-";
+
+            // System prompt — uygulama bilgisi dahil, token dengeli
+            var todayTasks = request.TodayTasks != null && request.TodayTasks.Any()
+                ? string.Join(", ", request.TodayTasks.Select((t, i) => $"[{i}] {t.SubjectName} ({t.TaskType}, {t.DurationMinutes}dk, id:{t.Id})"))
+                : "Bugün görev yok";
+
+            var systemPrompt =
+                $"Sen 'AI Study Coach' uygulamasının Türkçe kişisel öğrenci koçusun. Adın Koç.\n" +
+                $"Öğrenci: {request.UserName ?? "Öğrenci"} | Sınav: {request.TargetExam ?? "-"} | Alan: {request.SelectedArea ?? "-"}\n" +
+                $"Zayıf dersler: {weakStr} | Güçlü dersler: {strongStr}\n" +
+                $"Bugünkü program: {todayTasks}\n\n" +
+                "UYGULAMA DETAYLARI:\n" +
+                "Program nasıl oluşur: Onboarding'de seçilen hafta içi/sonu çalışma saati, zayıf/güçlü dersler ve çalışma tipine (yoğun/dengeli/hafif) göre AI otomatik haftalık program oluşturur. Zayıf dersler öncelikli, güçlü dersler destekleyici bloklar olarak yerleşir. Her blok konu, soru çözümü, deneme veya tekrar tipinde olabilir.\n" +
+                "Program değişikliği: Profil sekmesi → 'Ders Profilim' bölümünden zayıf/güçlü ders seçimi değiştirilebilir; değişince program yeniden üretilir.\n" +
+                "Konu ekleme: Ana sayfa → göreve tıkla → 'Konu Ata'. Manuel görev için ana sayfa sağ alt + butonu.\n" +
+                "Pomodoro: Göreve tıkla → 'Dersi Başlat' → çalışma ekranı açılır. 'Mola' butonu 5 dk ara verir.\n" +
+                "Ortam sesleri: Çalışma ekranındaki 'Ortam Sesleri & Çalışma Yayınları' kartından yağmur, şömine, orman sesi veya Study With Me YouTube yayınları açılır.\n" +
+                "Denemeler: Alt menü 'Denemeler' → sınav sonuçlarını gir → net hesaplama, ders bazlı grafik ve trend analizi görürsün.\n" +
+                "Gelişimim: XP sistemi var — tamamlanan görev +10 XP, çözülen soru +1 XP, aktif gün +5 XP. Seviyeler: Çırak→Acemi→Gelişen→Uzman. Streak günlük aktivite serisi.\n" +
+                "Karanlık mod: Profil sekmesi (alt menü sağ) → 'Karanlık Mod' toggle.\n" +
+                "AI Koç kartı: Ana sayfada günlük kişisel koçluk mesajı, bugün ne çalışmalı önerisi ve aksiyon maddeleri gösterir.\n" +
+                "Hızlı not: Ana sayfada sol alttaki not ikonu → hızlı not ekle, düzenle, sil.\n" +
+                "Haftalık plan görüntüle: Ana sayfa 'Haftalık Planımı İncele' butonu → tüm haftanın görevleri.\n\n" +
+                "INTENT KURALLARI — Sadece şu durumlarda JSON döndür, başka hiçbir şey yazma:\n" +
+                "A) Kullanıcı programa görev/ders eklemek istiyorsa:\n" +
+                "{\"intent\":\"add_task\",\"subjectName\":\"<ders adı>\",\"taskType\":\"konu_anlatimi|soru_cozumu|deneme|tekrar\",\"durationMinutes\":60,\"suggestion\":\"<kullanıcıya gösterilecek öneri metni>\"}\n" +
+                "B) Kullanıcı mevcut bir göreve konu atamak istiyorsa:\n" +
+                "{\"intent\":\"assign_topic\",\"suggestion\":\"<kullanıcıya gösterilecek öneri metni>\"}\n" +
+                "C) Ders programı değişikliği (zayıf/güçlü ders oranı) istiyorsa:\n" +
+                "{\"intent\":\"schedule_update\",\"lessonName\":\"<ders>\",\"action\":\"increase|decrease|swap\",\"reason\":\"<neden>\",\"suggestion\":\"<teklif>\"}\n" +
+                "D) Diğer tüm durumlarda normal Türkçe metin yaz, JSON kullanma. Kısa (2-3 cümle) ve samimi ol.\n" +
+                "E) Siyaset, haberler gibi konu dışı sorularda nazikçe yönlendir.";
+
+            var allContents = new List<object>
+            {
+                new { role = "user",  parts = new[] { new { text = systemPrompt } } },
+                new { role = "model", parts = new[] { new { text = "Anladım, sana yardımcı olmaya hazırım!" } } }
+            };
+
+            // Son 6 mesajı gönder — token limitini aşmamak için geçmişi kısıt
+            var msgs = request.Messages
+                .SkipWhile(m => m.Role != "user")
+                .TakeLast(6)
+                .ToList();
+            foreach (var m in msgs)
+            {
+                allContents.Add(new
+                {
+                    role  = m.Role == "user" ? "user" : "model",
+                    parts = new[] { new { text = m.Content } }
+                });
+            }
+
+            var payload = new { contents = allContents };
+            var jsonPayload = JsonSerializer.Serialize(payload);
+            var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response;
+            string responseString;
+            try
+            {
+                response = await _httpClient.PostAsync(url, content);
+                responseString = await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception httpEx)
+            {
+                Console.WriteLine($"[ChatAsync] HTTP error: {httpEx.Message}");
+                return new ChatResponseDto { Message = "Şu an bağlantı sorunu yaşıyorum, biraz sonra tekrar dene." };
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"[ChatAsync] Gemini error {response.StatusCode}: {responseString}");
+                // 429 = rate limit — kullanıcıya özel mesaj
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    return new ChatResponseDto { Message = "Çok fazla mesaj gönderildi, lütfen 30 saniye bekleyip tekrar dene. 🕐" };
+                return new ChatResponseDto { Message = "Şu an yanıt veremiyorum, biraz sonra tekrar dene." };
+            }
+
+            try
+            {
+                using var jsonDoc = JsonDocument.Parse(responseString);
+
+                var rawText = jsonDoc.RootElement
+                    .GetProperty("candidates")[0]
+                    .GetProperty("content")
+                    .GetProperty("parts")[0]
+                    .GetProperty("text").GetString()?.Trim() ?? "";
+
+                // Intent JSON tespiti
+                var trimmed = rawText.TrimStart();
+                if (trimmed.StartsWith("{\"intent\""))
+                {
+                    try
+                    {
+                        var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                        using var intentDoc = JsonDocument.Parse(trimmed);
+                        var intent = intentDoc.RootElement.GetProperty("intent").GetString();
+
+                        if (intent == "schedule_update")
+                        {
+                            var dto = JsonSerializer.Deserialize<ScheduleUpdateIntentDto>(trimmed, opts);
+                            return new ChatResponseDto
+                            {
+                                Message        = dto?.Suggestion ?? "Ders programını güncelleyeyim mi?",
+                                ScheduleIntent = dto
+                            };
+                        }
+                        if (intent == "add_task")
+                        {
+                            var dto = JsonSerializer.Deserialize<AddTaskIntentDto>(trimmed, opts);
+                            return new ChatResponseDto
+                            {
+                                Message       = dto?.Suggestion ?? "Programa yeni görev ekleyeyim mi?",
+                                AddTaskIntent = dto
+                            };
+                        }
+                        if (intent == "assign_topic")
+                        {
+                            var dto = JsonSerializer.Deserialize<AssignTopicIntentDto>(trimmed, opts);
+                            return new ChatResponseDto
+                            {
+                                Message           = dto?.Suggestion ?? "Hangi göreve konu eklemek istersin?",
+                                AssignTopicIntent = dto
+                            };
+                        }
+                    }
+                    catch { /* parse başarısız → normal mesaj */ }
+                }
+
+                return new ChatResponseDto { Message = rawText };
+            }
+            catch (Exception parseEx)
+            {
+                Console.WriteLine($"[ChatAsync] Parse error: {parseEx.Message}\nResponse: {responseString}");
+                return new ChatResponseDto { Message = "Yanıt işlenirken bir sorun oluştu, tekrar dene." };
+            }
+        }
 
         public async Task<List<AiPlanResponseDto>> OptimizePlanAsync(int userId, ExamAnalysisDto analysis)
         {

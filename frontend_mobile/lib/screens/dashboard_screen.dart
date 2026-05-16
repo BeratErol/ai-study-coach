@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../models/quick_note.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import '../core/app_theme.dart';
+import '../models/study_plan.dart';
 import '../models/study_task.dart';
+import '../providers/gelisimim_provider.dart';
 import '../providers/study_plan_provider.dart';
 import '../data/subject_topics.dart';
 import '../models/subject_data.dart';
 import '../widgets/task_card.dart';
+import '../widgets/quick_note_sheet.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD SCREEN
@@ -26,9 +32,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.invalidate(examCountdownProvider);
+      ref.invalidate(onboardingDataProvider);
       ref.invalidate(studyPlanProvider);
       ref.invalidate(todayTasksProvider);
       ref.invalidate(manualTasksProvider);
+      ref.invalidate(questionSubjectsProvider);
     });
   }
 
@@ -42,7 +50,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         todayAsync.value?.where((t) => !t.isMola).length ?? 0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F2FF),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           // ── Scrollable content with collapsible header ───────────────
@@ -130,12 +138,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   ),
                 ),
               ),
+              // ── Hedefe Kalan Yol ─────────────────────────────────────
+              SliverToBoxAdapter(
+                child: _ExamGoalCard(ref: ref),
+              ),
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                   child: todayAsync.when(
                     loading: () => const _LoadingSkeleton(),
-                    error: (_, _) => const _ErrorState(),
+                    error: (_, _) => _ContentArea(
+                      tasks: const [],
+                      onWeeklyPlan: () =>
+                          _showWeeklyPlanSheet(context, ref),
+                    ),
                     data: (tasks) => _ContentArea(
                       tasks: tasks,
                       onWeeklyPlan: () =>
@@ -223,13 +239,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   void _showQuickNoteSheet(BuildContext context, WidgetRef ref) {
+    final messenger = ScaffoldMessenger.of(context);
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => const _QuickNoteSheet(),
+      builder: (_) => QuickNoteSheet(messenger: messenger),
     );
   }
 
@@ -293,8 +310,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         child: _RestModeDialog(
           onConfirm: () {
             final tasks = ref.read(todayTasksProvider).value ?? [];
-            ref.read(completedTaskIdsProvider.notifier).state =
-                tasks.map((t) => t.id).toSet();
+            ref
+                .read(completedTaskIdsProvider.notifier)
+                .markAll(tasks.map((t) => t.id).toSet());
+            ref.read(restDaysProvider.notifier).state++;
             Navigator.pop(ctx);
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content:
@@ -304,6 +323,120 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           },
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXAM GOAL CARD
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ExamGoalCard extends ConsumerWidget {
+  final WidgetRef ref;
+  const _ExamGoalCard({required this.ref});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final goalAsync = ref.watch(examGoalProvider);
+    return goalAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (goal) {
+        final tytHedef = (goal['tytHedef'] as String? ?? '').trim();
+        final tytNet = goal['tytNet'] as double?;
+        final aytHedef = (goal['aytHedef'] as String? ?? '').trim();
+        final aytNet = goal['aytNet'] as double?;
+
+        final hasTyt = tytHedef.isNotEmpty;
+        final hasAyt = aytHedef.isNotEmpty;
+
+        if (!hasTyt && !hasAyt) return const SizedBox.shrink();
+
+        // Satır üret: "hedef — X.X Net" ya da sadece "hedef"
+        String line(String hedef, double? net) =>
+            net != null ? '$hedef — ${net.toStringAsFixed(1)} Net' : hedef;
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text('🚀', style: TextStyle(fontSize: 22)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Hedefe Kalan Yol',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (hasTyt) ...[
+                      if (hasAyt)
+                        const Text('TYT',
+                            style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600)),
+                      Text(
+                        line(tytHedef, tytNet),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                    ],
+                    if (hasTyt && hasAyt) const SizedBox(height: 6),
+                    if (hasAyt) ...[
+                      if (hasTyt)
+                        const Text('AYT',
+                            style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600)),
+                      Text(
+                        line(aytHedef, aytNet),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                    ],
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Bas Gaza! 💪',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -382,21 +515,22 @@ class _ContentArea extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final dimColor = Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.4);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 40),
       child: Column(
         children: [
-          Icon(Icons.inbox_outlined, size: 80, color: Colors.grey.shade300),
+          Icon(Icons.inbox_outlined, size: 80, color: dimColor),
           const SizedBox(height: 16),
           Text(
             'Bugün için planlanmış görev yok.',
-            style: TextStyle(fontSize: 16, color: Colors.grey.shade500),
+            style: TextStyle(fontSize: 16, color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.6)),
           ),
           const SizedBox(height: 8),
           Text(
             'Aşağıdaki butona basarak görev ekle\nya da haftalık planını incele.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade400),
+            style: TextStyle(fontSize: 14, color: dimColor),
           ),
         ],
       ),
@@ -517,9 +651,9 @@ class _WeeklyPlanButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFFEEF2FF),
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFBFBFFF)),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
         ),
         child: Row(
           children: [
@@ -616,14 +750,143 @@ class _WeeklyPlanSheet extends ConsumerWidget {
   final ScrollController scrollController;
   const _WeeklyPlanSheet({required this.scrollController});
 
+  Future<void> _downloadPdf(BuildContext context, List<StudyDay> days) async {
+    // Türkçe karakter desteği için Noto Sans fontlarını yükle
+    final fontRegular = await PdfGoogleFonts.notoSansRegular();
+    final fontBold    = await PdfGoogleFonts.notoSansBold();
+
+    final doc = pw.Document();
+
+    const months = [
+      '', 'Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran',
+      'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'
+    ];
+    const monthsTr = [
+      '', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+      'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
+    ];
+
+    pw.TextStyle regular({double size = 12, PdfColor? color}) =>
+        pw.TextStyle(font: fontRegular, fontSize: size, color: color);
+    pw.TextStyle bold({double size = 12, PdfColor? color}) =>
+        pw.TextStyle(font: fontBold, fontSize: size, color: color);
+
+    String fmtTime(TimeOfDay t) =>
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+    String taskTypeLabel(String type) {
+      switch (type) {
+        case 'konu_anlatimi': return 'Konu Anlatimi';
+        case 'soru_cozumu':   return 'Soru Cozumu';
+        case 'deneme':        return 'Deneme Sinavi';
+        case 'tekrar':        return 'Tekrar';
+        case 'mola':          return 'Mola';
+        default:              return type;
+      }
+    }
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
+        header: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              'Haftalik Calisma Planim',
+              style: bold(size: 22),
+            ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'AI Study Coach — ${days.isNotEmpty ? '${days.first.date.day} ${months[days.first.date.month]}' : ''} itibaren',
+              style: regular(size: 11, color: PdfColors.grey600),
+            ),
+            pw.Divider(color: PdfColors.indigo300, thickness: 1.5),
+            pw.SizedBox(height: 4),
+          ],
+        ),
+        build: (_) => days.map((day) {
+          final dt = day.date;
+          final dateLabel = '${dt.day} ${monthsTr[dt.month]} ${dt.year}';
+          final weekdays = ['', 'Pazartesi', 'Sali', 'Carsamba', 'Persembe', 'Cuma', 'Cumartesi', 'Pazar'];
+          final dayLabel = weekdays[dt.weekday];
+
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.indigo50,
+                  borderRadius: pw.BorderRadius.circular(6),
+                ),
+                child: pw.Text(
+                  '$dayLabel, $dateLabel',
+                  style: bold(size: 13, color: PdfColors.indigo800),
+                ),
+              ),
+              pw.SizedBox(height: 6),
+              if (day.isOffDay)
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(left: 8, bottom: 8),
+                  child: pw.Text('Dinlenme gunu', style: regular(size: 12, color: PdfColors.grey600)),
+                )
+              else if (day.blocks.isEmpty)
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(left: 8, bottom: 8),
+                  child: pw.Text('Bu gun icin plan yok.', style: regular(size: 12, color: PdfColors.grey500)),
+                )
+              else
+                ...day.blocks.map((b) => pw.Container(
+                  margin: const pw.EdgeInsets.only(left: 8, bottom: 5),
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border(left: pw.BorderSide(
+                      color: b.isMola ? PdfColors.green400 : PdfColors.indigo300,
+                      width: 3,
+                    )),
+                  ),
+                  child: pw.Row(
+                    children: [
+                      pw.Expanded(
+                        child: pw.Text(
+                          b.isMola ? 'Mola' : b.subjectName,
+                          style: bold(size: 12),
+                        ),
+                      ),
+                      pw.Text(
+                        '${fmtTime(b.startTime)} - ${fmtTime(b.endTime)}  (${b.durationMinutes} dk)',
+                        style: regular(size: 11, color: PdfColors.grey700),
+                      ),
+                      if (!b.isMola) ...[
+                        pw.SizedBox(width: 8),
+                        pw.Text(
+                          taskTypeLabel(b.taskType),
+                          style: regular(size: 10, color: PdfColors.indigo600),
+                        ),
+                      ],
+                    ],
+                  ),
+                )),
+              pw.SizedBox(height: 10),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (_) async => doc.save());
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final planAsync = ref.watch(studyPlanProvider);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [
@@ -639,17 +902,31 @@ class _WeeklyPlanSheet extends ConsumerWidget {
                       style: TextStyle(
                           fontSize: 20, fontWeight: FontWeight.w800)),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEEF2FF),
-                    borderRadius: BorderRadius.circular(12),
+                planAsync.when(
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
+                  data: (days) => GestureDetector(
+                    onTap: () => _downloadPdf(context, days),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.picture_as_pdf_rounded, size: 16, color: Color(0xFF4F46E5)),
+                          SizedBox(width: 4),
+                          Text('PDF İndir',
+                              style: TextStyle(
+                                  color: Color(0xFF4F46E5),
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: const Text('PDF İndir',
-                      style: TextStyle(
-                          color: Color(0xFF4F46E5),
-                          fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
@@ -690,7 +967,7 @@ class _WeeklyPlanSheet extends ConsumerWidget {
                             const SizedBox(width: 8),
                             Text('Dinlenme günü',
                                 style: TextStyle(
-                                    color: Colors.grey.shade500,
+                                    color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.6),
                                     fontSize: 15)),
                           ]),
                         )
@@ -699,147 +976,20 @@ class _WeeklyPlanSheet extends ConsumerWidget {
                           padding: const EdgeInsets.only(bottom: 8),
                           child: Text('Bu gün için plan yok.',
                               style: TextStyle(
-                                  color: Colors.grey.shade400)),
+                                  color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.5))),
                         )
                       else
                         ...day.blocks.map((b) {
                           final task = StudyTask.fromBlock(b, day.date);
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
-                            child: TaskCard(task: task),
+                            child: TaskCard(task: task, readOnly: true),
                           );
                         }),
                       const Divider(),
                     ],
                   );
                 },
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// QUICK NOTE SHEET
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _QuickNoteSheet extends ConsumerStatefulWidget {
-  const _QuickNoteSheet();
-
-  @override
-  ConsumerState<_QuickNoteSheet> createState() => _QuickNoteSheetState();
-}
-
-class _QuickNoteSheetState extends ConsumerState<_QuickNoteSheet> {
-  final _titleCtrl = TextEditingController();
-  final _contentCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _titleCtrl.dispose();
-    _contentCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _sheetHandle(),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text('⚡',
-                    style: TextStyle(fontSize: 20)),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Hızlı Not Ekle',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w700)),
-                  Text(
-                    DateFormat('d MMMM yyyy · HH:mm', 'tr_TR')
-                        .format(now),
-                    style: const TextStyle(
-                        fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _titleCtrl,
-            decoration: InputDecoration(
-              hintText: 'Başlık girin (Opsiyonel)',
-              filled: true,
-              fillColor: Colors.grey.shade100,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _contentCtrl,
-            maxLines: 4,
-            decoration: InputDecoration(
-              hintText: 'Aklına geleni yaz...',
-              filled: true,
-              fillColor: Colors.grey.shade100,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                final content = _contentCtrl.text.trim();
-                if (content.isEmpty) { return; }
-                final note = QuickNote(
-                  id: '${DateTime.now().millisecondsSinceEpoch}',
-                  title: _titleCtrl.text.trim().isEmpty
-                      ? null
-                      : _titleCtrl.text.trim(),
-                  content: content,
-                  createdAt: DateTime.now(),
-                );
-                ref.read(quickNotesProvider.notifier).addNote(note);
-                Navigator.pop(context);
-              },
-              icon: const Icon(Icons.check),
-              label: const Text('Kaydet'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black87,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
               ),
             ),
           ),
@@ -877,7 +1027,6 @@ class _AddTaskMenu extends StatelessWidget {
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
           const SizedBox(height: 20),
           _ActionTile(
-            color: const Color(0xFFEEF2FF),
             iconColor: const Color(0xFF4F46E5),
             icon: Icons.list_alt_rounded,
             title: 'Çalışma Programım İçin Konuları Düzenle',
@@ -886,7 +1035,6 @@ class _AddTaskMenu extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _ActionTile(
-            color: const Color(0xFFFFF7ED),
             iconColor: const Color(0xFFF97316),
             icon: Icons.edit_rounded,
             title: 'Kendim Görev Ekle',
@@ -895,7 +1043,6 @@ class _AddTaskMenu extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _ActionTile(
-            color: const Color(0xFFECFDF5),
             iconColor: const Color(0xFF10B981),
             icon: Icons.sick_outlined,
             title: 'Hastayım / Dinlenme Modu',
@@ -910,7 +1057,6 @@ class _AddTaskMenu extends StatelessWidget {
 }
 
 class _ActionTile extends StatelessWidget {
-  final Color color;
   final Color iconColor;
   final IconData icon;
   final String title;
@@ -918,7 +1064,6 @@ class _ActionTile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _ActionTile({
-    required this.color,
     required this.iconColor,
     required this.icon,
     required this.title,
@@ -933,7 +1078,7 @@ class _ActionTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: color,
+          color: iconColor.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -958,11 +1103,13 @@ class _ActionTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(subtitle,
                       style: TextStyle(
-                          fontSize: 13, color: Colors.grey.shade600)),
+                          fontSize: 13,
+                          color: Theme.of(context).textTheme.bodySmall?.color)),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.grey.shade400),
+            Icon(Icons.chevron_right,
+                color: Theme.of(context).textTheme.bodySmall?.color),
           ],
         ),
       ),
@@ -990,9 +1137,9 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
     final assignments = ref.watch(topicAssignmentsProvider);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [
@@ -1019,7 +1166,7 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
             child: Text(
               'Her dersin üzerine tıklayarak konu atayabilirsin',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+              style: TextStyle(fontSize: 13, color: Theme.of(context).textTheme.bodySmall?.color),
             ),
           ),
           Expanded(
@@ -1075,10 +1222,10 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
                               margin: const EdgeInsets.only(bottom: 8),
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
-                                color: Colors.grey.shade50,
+                                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                    color: Colors.grey.shade200),
+                                    color: Theme.of(context).dividerColor),
                               ),
                               child: Row(
                                 children: [
@@ -1126,70 +1273,131 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
   }
 
   void _pickTopic(BuildContext context, String blockId, String subjectName) {
-    final topics = getTopicsForSubject(subjectName);
-    if (topics.isEmpty) { return; }
+    final predefinedTopics = getTopicsForSubject(subjectName);
     String? selected = ref.read(topicAssignmentsProvider)[blockId];
+
+    void assignAndClose(BuildContext ctx, String topic) {
+      ref.read(topicAssignmentsProvider.notifier).assign(blockId, topic);
+      Navigator.pop(ctx);
+    }
 
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setState) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text('$subjectName – Konu Seç',
-                        style: const TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.w700)),
+        builder: (ctx, setSt) {
+          final ctrl = TextEditingController();
+          return Padding(
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 12),
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2)),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text('$subjectName – Konu Seç',
+                            style: const TextStyle(
+                                fontSize: 17, fontWeight: FontWeight.w700)),
+                      ),
+                      if (selected != null)
+                        TextButton(
+                          onPressed: () {
+                            ref.read(topicAssignmentsProvider.notifier)
+                                .remove(blockId);
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text('Temizle',
+                              style: TextStyle(color: Colors.red)),
+                        ),
+                    ],
                   ),
-                  if (selected != null)
-                    TextButton(
-                      onPressed: () {
-                        ref
-                            .read(topicAssignmentsProvider.notifier)
-                            .update((s) => {...s}..remove(blockId));
-                        Navigator.pop(ctx);
+                ),
+                // Custom topic input
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: ctrl,
+                          decoration: InputDecoration(
+                            hintText: 'Konu adı yaz ve ekle…',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onSubmitted: (v) {
+                            final t = v.trim();
+                            if (t.isNotEmpty) assignAndClose(ctx, t);
+                          },
+                          textInputAction: TextInputAction.done,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                          final t = ctrl.text.trim();
+                          if (t.isNotEmpty) assignAndClose(ctx, t);
+                        },
+                        child: Container(
+                          height: 42, width: 42,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4F46E5),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.add_rounded,
+                              color: Colors.white, size: 22),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (predefinedTopics.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 320),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: predefinedTopics.length,
+                      itemBuilder: (_, i) {
+                        final topic = predefinedTopics[i];
+                        final isSelected = selected == topic;
+                        return ListTile(
+                          title: Text(topic),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_circle,
+                                  color: Color(0xFF4F46E5))
+                              : const Icon(Icons.radio_button_unchecked,
+                                  color: Colors.grey),
+                          onTap: () {
+                            setSt(() => selected = topic);
+                            assignAndClose(ctx, topic);
+                          },
+                        );
                       },
-                      child: const Text('Temizle',
-                          style: TextStyle(color: Colors.red)),
                     ),
+                  ),
                 ],
-              ),
+                const SizedBox(height: 16),
+              ],
             ),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: topics.length,
-                itemBuilder: (_, i) {
-                  final topic = topics[i];
-                  final isSelected = selected == topic;
-                  return ListTile(
-                    title: Text(topic),
-                    trailing: isSelected
-                        ? const Icon(Icons.check_circle,
-                            color: Color(0xFF4F46E5))
-                        : const Icon(Icons.radio_button_unchecked,
-                            color: Colors.grey),
-                    onTap: () {
-                      setState(() => selected = topic);
-                      ref
-                          .read(topicAssignmentsProvider.notifier)
-                          .update((s) => {...s, blockId: topic});
-                      Navigator.pop(ctx);
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -1244,11 +1452,17 @@ class _ManualTaskSheetState extends ConsumerState<_ManualTaskSheet> {
               loading: () => const LinearProgressIndicator(),
               error: (_, _) => const Text('Veriler yüklenemedi.'),
               data: (data) {
-                final subjects = data == null
+                final base = data == null
                     ? <String>[]
                     : getSubjectsForExam(data.targetExam, data.selectedArea)
                         .map((s) => s.name)
                         .toList();
+                // Add custom subjects not already in base pool
+                final baseSet = base.toSet();
+                final extra = (data?.customSubjects ?? [])
+                    .where((s) => !baseSet.contains(s))
+                    .toList();
+                final subjects = [...base, ...extra];
                 return DropdownButtonFormField<String>(
                   isExpanded: true,
                   initialValue: _subject,
@@ -1270,24 +1484,37 @@ class _ManualTaskSheetState extends ConsumerState<_ManualTaskSheet> {
 
             // Konu seçici
             _label('Konu (İsteğe Bağlı)'),
-            DropdownButtonFormField<String?>(
-              isExpanded: true,
-              initialValue: _topic,
-              hint: const Text('🚫 Konu Belirtmek İstemiyorum'),
-              items: [
-                const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('🚫 Konu Belirtmek İstemiyorum',
-                        overflow: TextOverflow.ellipsis)),
-                ...getTopicsForSubject(_subject ?? '').map(
-                    (t) => DropdownMenuItem(
-                        value: t,
-                        child: Text(t,
-                            overflow: TextOverflow.ellipsis))),
-              ],
-              onChanged: (v) => setState(() => _topic = v),
-              decoration: _inputDecoration(),
-            ),
+            Builder(builder: (context) {
+              final topics = getTopicsForSubject(_subject ?? '');
+              if (topics.isEmpty) {
+                // Özel dersler veya konu listesi olmayan dersler için serbest yazım
+                return TextFormField(
+                  initialValue: _topic,
+                  decoration: _inputDecoration().copyWith(
+                    hintText: 'Konu adı yaz (opsiyonel)',
+                  ),
+                  onChanged: (v) => setState(() => _topic = v.trim().isEmpty ? null : v.trim()),
+                );
+              }
+              return DropdownButtonFormField<String?>(
+                isExpanded: true,
+                initialValue: _topic,
+                hint: const Text('🚫 Konu Belirtmek İstemiyorum'),
+                items: [
+                  const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('🚫 Konu Belirtmek İstemiyorum',
+                          overflow: TextOverflow.ellipsis)),
+                  ...topics.map(
+                      (t) => DropdownMenuItem(
+                          value: t,
+                          child: Text(t,
+                              overflow: TextOverflow.ellipsis))),
+                ],
+                onChanged: (v) => setState(() => _topic = v),
+                decoration: _inputDecoration(),
+              );
+            }),
             const SizedBox(height: 14),
 
             // Görev türü
@@ -1296,14 +1523,10 @@ class _ManualTaskSheetState extends ConsumerState<_ManualTaskSheet> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _typeChip('Konu Çalışması', 'konu_anlatimi',
-                    const Color(0xFFFFF7ED), const Color(0xFFF97316)),
-                _typeChip('Soru Çözümü', 'soru_cozumu',
-                    Colors.white, Colors.black87),
-                _typeChip('Deneme Sınavı', 'deneme',
-                    Colors.white, Colors.black87),
-                _typeChip('Tekrar', 'tekrar',
-                    Colors.white, Colors.black87),
+                _typeChip(context, 'Konu Çalışması', 'konu_anlatimi'),
+                _typeChip(context, 'Soru Çözümü', 'soru_cozumu'),
+                _typeChip(context, 'Deneme Sınavı', 'deneme'),
+                _typeChip(context, 'Tekrar', 'tekrar'),
               ],
             ),
             const SizedBox(height: 14),
@@ -1314,7 +1537,7 @@ class _ManualTaskSheetState extends ConsumerState<_ManualTaskSheet> {
               spacing: 8,
               runSpacing: 8,
               children: [30, 45, 60, 90, 120, 180]
-                  .map((dk) => _durationChip(dk))
+                  .map((dk) => _durationChip(context, dk))
                   .toList(),
             ),
             const SizedBox(height: 24),
@@ -1403,45 +1626,51 @@ class _ManualTaskSheetState extends ConsumerState<_ManualTaskSheet> {
     );
   }
 
-  Widget _typeChip(String label, String value, Color bg, Color fg) {
+  Widget _typeChip(BuildContext context, String label, String value) {
     final selected = _taskType == value;
+    final textColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87;
     return GestureDetector(
       onTap: () => setState(() => _taskType = value),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFF97316) : bg,
+          color: selected
+              ? const Color(0xFFF97316)
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
               color: selected
                   ? const Color(0xFFF97316)
-                  : Colors.grey.shade300),
+                  : Theme.of(context).dividerColor),
         ),
         child: Text(label,
             style: TextStyle(
-                color: selected ? Colors.white : fg,
+                color: selected ? Colors.white : textColor,
                 fontWeight: FontWeight.w600)),
       ),
     );
   }
 
-  Widget _durationChip(int dk) {
+  Widget _durationChip(BuildContext context, int dk) {
     final selected = _duration == dk;
+    final textColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87;
     return GestureDetector(
       onTap: () => setState(() => _duration = dk),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF4F46E5) : Colors.white,
+          color: selected
+              ? const Color(0xFF4F46E5)
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
               color: selected
                   ? const Color(0xFF4F46E5)
-                  : Colors.grey.shade300),
+                  : Theme.of(context).dividerColor),
         ),
         child: Text('$dk dk',
             style: TextStyle(
-                color: selected ? Colors.white : Colors.black87,
+                color: selected ? Colors.white : textColor,
                 fontWeight: FontWeight.w600)),
       ),
     );
@@ -1467,18 +1696,21 @@ class _ManualTaskSheetState extends ConsumerState<_ManualTaskSheet> {
                 fontSize: 14, fontWeight: FontWeight.w600)),
       );
 
-  static InputDecoration _inputDecoration() => InputDecoration(
-        filled: true,
-        fillColor: Colors.grey.shade50,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade200),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade200),
-        ),
-      );
+  InputDecoration _inputDecoration() {
+    final theme = Theme.of(context);
+    return InputDecoration(
+      filled: true,
+      fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: theme.dividerColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: theme.dividerColor),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1560,29 +1792,10 @@ class _LoadingSkeleton extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 10),
           height: 80,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(16),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  const _ErrorState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        children: [
-          Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
-          const SizedBox(height: 12),
-          const Text('Plan yüklenemedi.',
-              style: TextStyle(fontSize: 16)),
-        ],
       ),
     );
   }

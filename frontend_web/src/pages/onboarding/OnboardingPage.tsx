@@ -98,42 +98,77 @@ export default function OnboardingPage() {
   const progress = ((currentStep + 1) / totalSteps) * 100
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col w-full">
+    <div className="min-h-screen flex flex-col" style={{ background: '#F8F7FF' }}>
 
       {/* PROGRESS BAR (sticky) */}
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm w-full">
-        <div className="w-full max-w-2xl mx-auto px-6 py-4">
+      <div className="sticky top-0 z-20 shadow-sm" style={{ background: '#ffffff', borderBottom: '2px solid #E5E7EB' }}>
+        <div className="max-w-5xl mx-auto px-8 py-5">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-indigo-600 font-bold text-lg">
-              Adım {currentStep + 1}/{totalSteps}
-            </span>
-            <span className="text-gray-400 text-sm font-medium bg-gray-100 px-3 py-1 rounded-full">
-              {stepNames[currentStep]}
-            </span>
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold text-base"
+                style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
+              >
+                {currentStep + 1}
+              </div>
+              <div>
+                <span className="text-indigo-600 font-extrabold text-lg block leading-none">
+                  Adım {currentStep + 1}/{totalSteps}
+                </span>
+                <span className="text-gray-500 text-sm">{stepNames[currentStep]}</span>
+              </div>
+            </div>
+            <div className="flex gap-1.5">
+              {stepNames.map((_, i) => (
+                <div
+                  key={i}
+                  className="h-2 rounded-full transition-all duration-300"
+                  style={{
+                    width: i <= currentStep ? '28px' : '8px',
+                    background: i <= currentStep ? '#4F46E5' : '#E5E7EB',
+                  }}
+                />
+              ))}
+            </div>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2.5">
+          <div className="w-full bg-gray-200 rounded-full h-3">
             <div
-              className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
+              className="h-3 rounded-full transition-all duration-500 ease-out"
+              style={{
+                width: `${progress}%`,
+                background: 'linear-gradient(90deg, #4F46E5, #6D28D9)',
+              }}
             />
           </div>
         </div>
       </div>
 
       {/* İÇERİK */}
-      <div className="flex-1 w-full overflow-y-auto pb-32">
-        <div className="w-full max-w-2xl mx-auto px-6 py-8">
+      <div className="flex-1 overflow-y-auto pb-36">
+        <div className="max-w-5xl mx-auto px-8 py-10">
           {buildPages()[currentStep]}
         </div>
       </div>
 
       {/* ALT BUTON BARI (fixed) */}
-      <div className="fixed bottom-0 left-0 right-0 z-20 bg-white border-t-2 border-gray-100 shadow-2xl">
-        <div className="w-full max-w-2xl mx-auto px-6 py-5 flex justify-between items-center">
+      <div
+        className="fixed bottom-0 left-0 right-0 z-20 shadow-2xl"
+        style={{ background: '#ffffff', borderTop: '2px solid #E5E7EB' }}
+      >
+        <div className="max-w-5xl mx-auto px-8 py-5 flex justify-between items-center">
           {currentStep > 0 ? (
             <button
               onClick={goBack}
-              className="flex items-center gap-2 px-6 py-3.5 rounded-2xl font-semibold text-base text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all border-2 border-gray-200 hover:border-gray-300 cursor-pointer"
+              className="flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-base cursor-pointer transition-all"
+              style={{ background: '#F3F4F6', color: '#374151', border: '2px solid #E5E7EB' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#E5E7EB'
+                e.currentTarget.style.borderColor = '#D1D5DB'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#F3F4F6'
+                e.currentTarget.style.borderColor = '#E5E7EB'
+              }}
             >
               ← Geri
             </button>
@@ -144,16 +179,20 @@ export default function OnboardingPage() {
           <button
             onClick={valid ? goNext : undefined}
             disabled={!valid || finishing}
-            className={`flex items-center gap-2 px-10 py-3.5 rounded-2xl font-bold text-base transition-all cursor-pointer ${
-              valid && !finishing
-                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:-translate-y-0.5'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
+            className="flex items-center gap-2 px-12 py-4 rounded-2xl font-extrabold text-lg cursor-pointer transition-all text-white"
+            style={{
+              background: valid && !finishing
+                ? 'linear-gradient(135deg, #4F46E5, #6D28D9)'
+                : '#D1D5DB',
+              color: valid && !finishing ? '#ffffff' : '#9CA3AF',
+              boxShadow: valid && !finishing ? '0 8px 24px rgba(79,70,229,0.35)' : 'none',
+              cursor: !valid || finishing ? 'not-allowed' : 'pointer',
+            }}
           >
             {finishing
-              ? 'Oluşturuluyor...'
+              ? '⏳ Oluşturuluyor...'
               : isLastStep
-              ? 'Programımı Oluştur 🚀'
+              ? '🚀 Programımı Oluştur'
               : 'Devam Et →'}
           </button>
         </div>

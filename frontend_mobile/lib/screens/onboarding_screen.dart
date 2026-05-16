@@ -32,7 +32,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   bool _hasAreaStep(String targetExam) =>
-      targetExam == 'YKS' || targetExam == 'KPSS';
+      targetExam == 'YKS' || targetExam == 'KPSS' || targetExam == 'OkulSinavi';
 
   List<String> _buildStepNames(bool hasArea) => [
         'İsim',
@@ -50,10 +50,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     if (step == 0) return data.name.trim().isNotEmpty && data.gender.isNotEmpty;
     if (step == 1) return data.educationLevel.isNotEmpty;
     if (step == 2) return data.targetExam.isNotEmpty;
+    // uni_diger: user adds all subjects manually (customSubjects); for all other
+    // OkulSinavi areas the base pool provides subjects so weakSubjects suffices.
+    final isOkulDiger = data.targetExam == 'OkulSinavi' &&
+        data.selectedArea == 'uni_diger';
     if (hasArea) {
       if (step == 3) return data.selectedArea.isNotEmpty;
       if (step == 5) return data.studyType.isNotEmpty;
-      if (step == 8) return data.weakSubjects.isNotEmpty;
+      if (step == 8) {
+        if (isOkulDiger) return data.customSubjects.isNotEmpty;
+        return data.weakSubjects.isNotEmpty;
+      }
     } else {
       if (step == 4) return data.studyType.isNotEmpty;
       if (step == 7) return data.weakSubjects.isNotEmpty;
@@ -109,7 +116,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFEEF2FF),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -208,7 +215,7 @@ class _ContinueButton extends StatelessWidget {
                   colors: [AppColors.primary, AppColors.primaryDark],
                 )
               : null,
-          color: valid ? null : Colors.grey.shade300,
+          color: valid ? null : Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: AppRadius.md,
         ),
         child: Row(

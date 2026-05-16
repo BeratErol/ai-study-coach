@@ -27,6 +27,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingData> {
   void updateOffDays(List<int> v) => state = state.copyWith(offDays: v);
   void updateStrongSubjects(List<String> v) => state = state.copyWith(strongSubjects: v);
   void updateWeakSubjects(List<String> v) => state = state.copyWith(weakSubjects: v);
+  void updateCustomSubjects(List<String> v) => state = state.copyWith(customSubjects: v);
   void updateSelectedArea(String v) => state = state.copyWith(selectedArea: v);
 
   Future<void> completeOnboarding() async {

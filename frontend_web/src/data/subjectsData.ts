@@ -125,6 +125,37 @@ export function getSubjectsForExam(targetExam: string, selectedArea: string): Su
         { name: 'Mevzuat', emoji: '📜', group: 'default' },
         { name: 'ÖABT (Alan Bilgisi)', emoji: '👩‍🏫', group: 'default' },
       ]
+    case 'DGS':
+      return [
+        { name: 'DGS Türkçe', emoji: '📖', group: 'default' },
+        { name: 'DGS Matematik', emoji: '📐', group: 'default' },
+        { name: 'DGS Sayısal Mantık', emoji: '🧩', group: 'default' },
+        { name: 'DGS Sözel Mantık', emoji: '💭', group: 'default' },
+      ]
+    case 'TUS':
+      return [
+        { name: 'Anatomi', emoji: '🦴', group: 'default' },
+        { name: 'Fizyoloji', emoji: '💓', group: 'default' },
+        { name: 'Biyokimya', emoji: '🧪', group: 'default' },
+        { name: 'Histoloji ve Embriyoloji', emoji: '🔬', group: 'default' },
+        { name: 'Mikrobiyoloji', emoji: '🦠', group: 'default' },
+        { name: 'Patoloji', emoji: '🧬', group: 'default' },
+        { name: 'Farmakoloji', emoji: '💊', group: 'default' },
+        { name: 'Dahiliye (İç Hastalıkları)', emoji: '🏥', group: 'default' },
+        { name: 'Cerrahi', emoji: '🔪', group: 'default' },
+        { name: 'Pediatri (Çocuk Hastalıkları)', emoji: '👶', group: 'default' },
+        { name: 'Kadın Hastalıkları ve Doğum', emoji: '🤱', group: 'default' },
+        { name: 'Psikiyatri', emoji: '🧠', group: 'default' },
+        { name: 'Halk Sağlığı', emoji: '🌍', group: 'default' },
+      ]
+    case 'Bursluluk':
+      return [
+        { name: 'Matematik', emoji: '📐', group: 'default' },
+        { name: 'Türkçe', emoji: '📖', group: 'default' },
+        { name: 'Fen Bilimleri', emoji: '🔬', group: 'default' },
+        { name: 'Sosyal Bilgiler', emoji: '🌍', group: 'default' },
+        { name: 'Din Kültürü', emoji: '🕌', group: 'default' },
+      ]
     default:
       return [...tytSubjects]
   }

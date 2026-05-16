@@ -54,6 +54,50 @@ namespace Backend.Services
             return exams.Select(MapToExamResponseDto);
         }
 
+        public async Task<bool> DeleteExamAsync(int userId, int examId)
+        {
+            var exam = await _context.Exams
+                .FirstOrDefaultAsync(e => e.Id == examId && e.UserId == userId);
+            if (exam == null) return false;
+            _context.Exams.Remove(exam);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<ExamResponseDto?> UpdateExamAsync(int userId, int examId, CreateExamDto dto)
+        {
+            var exam = await _context.Exams
+                .Include(e => e.ExamDetails)
+                .FirstOrDefaultAsync(e => e.Id == examId && e.UserId == userId);
+            if (exam == null) return null;
+
+            exam.Title = dto.Title;
+            exam.Date = dto.Date;
+            exam.Type = dto.Type;
+            _context.ExamDetails.RemoveRange(exam.ExamDetails);
+            exam.ExamDetails = dto.Details.Select(d => new ExamDetail
+            {
+                LessonName = d.LessonName,
+                Correct = d.Correct,
+                Incorrect = d.Incorrect,
+                Net = d.Correct - (d.Incorrect * 0.25m)
+            }).ToList();
+
+            await _context.SaveChangesAsync();
+            return MapToExamResponseDto(exam);
+        }
+
+        public async Task<IEnumerable<ExamResponseDto>> GetExamsByTypeAsync(int userId, string type)
+        {
+            var exams = await _context.Exams
+                .Include(e => e.ExamDetails)
+                .Where(e => e.UserId == userId &&
+                            e.Type.ToLower().Contains(type.ToLower()))
+                .OrderByDescending(e => e.Date)
+                .ToListAsync();
+            return exams.Select(MapToExamResponseDto);
+        }
+
         public async Task<ExamAnalysisDto> GetExamAnalysisAsync(int userId)
         {
             var exams = await _context.Exams

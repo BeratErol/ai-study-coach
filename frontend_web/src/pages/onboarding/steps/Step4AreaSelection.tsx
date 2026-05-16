@@ -1,4 +1,5 @@
 import { useOnboardingStore } from '../../../stores/onboardingStore'
+import StepHeader from './StepHeader'
 
 const yksOptions = [
   { icon: '📘', title: 'Sadece TYT', subtitle: 'Sadece TYT dersleri ve TYT denemeleri', value: 'sadece_tyt' },
@@ -26,14 +27,8 @@ export default function Step4AreaSelection() {
   }
 
   return (
-    <div className="w-full">
-      <div className="mb-10">
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-6xl">🗺️</span>
-          <h2 className="text-4xl font-bold text-gray-900 leading-tight">Hangi Alandan Hazırlanıyorsun?</h2>
-        </div>
-        <p className="text-lg text-gray-500 mt-3">Bu seçim ders havuzunu belirleyecek</p>
-      </div>
+    <div className="w-full max-w-3xl mx-auto">
+      <StepHeader emoji="🗺️" title="Hangi Alandan Hazırlanıyorsun?" subtitle="Bu seçim ders havuzunu belirleyecek" />
 
       <div className="space-y-4">
         {options.map((opt) => (

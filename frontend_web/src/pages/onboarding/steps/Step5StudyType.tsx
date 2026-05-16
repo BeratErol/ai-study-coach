@@ -1,4 +1,5 @@
 import { useOnboardingStore } from '../../../stores/onboardingStore'
+import StepHeader from './StepHeader'
 
 const options = [
   {
@@ -19,17 +20,12 @@ export default function Step5StudyType() {
   const { studyType, updateStudyType } = useOnboardingStore()
 
   return (
-    <div className="w-full">
-      <div className="mb-10">
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-6xl">⏰</span>
-          <h2 className="text-4xl font-bold text-gray-900 leading-tight">Ne Zaman Daha Verimlisin?</h2>
-        </div>
-        <p className="text-lg text-gray-500 mt-3 leading-relaxed">
-          Sabah Kuşunu seçersen programın, okul/iş çıkışından sonra günün ilk uygun saatinde başlayacak.
-          Gece Baykuşunu seçersen programın, belirlediğin en geç saatte bitecek şekilde ayarlanacak.
-        </p>
-      </div>
+    <div className="w-full max-w-3xl mx-auto">
+      <StepHeader
+        emoji="⏰"
+        title="Ne Zaman Daha Verimlisin?"
+        subtitle="Sabah Kuşunu seçersen programın günün ilk uygun saatinde başlar, Gece Baykuşunu seçersen belirlediğin en geç saatte biter."
+      />
 
       <div className="space-y-4">
         {options.map((opt) => (

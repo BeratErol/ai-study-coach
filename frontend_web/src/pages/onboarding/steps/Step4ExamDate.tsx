@@ -1,19 +1,16 @@
 import { useOnboardingStore } from '../../../stores/onboardingStore'
+import StepHeader from './StepHeader'
 
 export default function Step4ExamDate({ onSkip }: { onSkip: () => void }) {
   const { examDate, targetExam, updateExamDate } = useOnboardingStore()
 
   return (
-    <div className="w-full">
-      <div className="mb-10">
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-6xl">📆</span>
-          <h2 className="text-4xl font-bold text-gray-900 leading-tight">Sınav Tarihin</h2>
-        </div>
-        <p className="text-lg text-gray-500 mt-3">
-          Geri sayım için {targetExam} sınav tarihini seç. İstersen atlayabilirsin.
-        </p>
-      </div>
+    <div className="w-full max-w-2xl mx-auto">
+      <StepHeader
+        emoji="📆"
+        title="Sınav Tarihin"
+        subtitle={`Geri sayım için ${targetExam} sınav tarihini seç. İstersen atlayabilirsin.`}
+      />
 
       <div className="bg-white rounded-3xl border-2 border-gray-200 p-6 mb-5">
         <label className="block text-lg font-semibold text-gray-700 mb-3">Sınav tarihi</label>
@@ -32,12 +29,14 @@ export default function Step4ExamDate({ onSkip }: { onSkip: () => void }) {
         </div>
       )}
 
-      <button
-        onClick={onSkip}
-        className="text-base text-gray-400 hover:text-gray-600 underline transition cursor-pointer"
-      >
-        Şimdilik atla →
-      </button>
+      <div className="text-center">
+        <button
+          onClick={onSkip}
+          className="text-base text-gray-400 hover:text-gray-600 underline transition cursor-pointer"
+        >
+          Şimdilik atla →
+        </button>
+      </div>
     </div>
   )
 }

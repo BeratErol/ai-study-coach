@@ -36,24 +36,24 @@ class _Step1NameGenderState extends ConsumerState<Step1NameGender> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: const [
-              Text('👋', style: TextStyle(fontSize: 26)),
-              SizedBox(width: 8),
+            children: [
+              const Text('👋', style: TextStyle(fontSize: 26)),
+              const SizedBox(width: 8),
               Text(
                 'Merhaba!',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             'Bilgilerini girerek başlayalım. Seni tam olarak tanımalıyım ki sana özel haftalık programını oluşturabileyim. Bu programı beğenmezsen yeni program için bilgilerini Profilim sekmesinden değiştirebilirsin.',
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: Theme.of(context).textTheme.bodySmall?.color,
               fontSize: 14,
               height: 1.5,
             ),
@@ -66,9 +66,9 @@ class _Step1NameGenderState extends ConsumerState<Step1NameGender> {
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).cardColor,
               borderRadius: AppRadius.md,
-              border: Border.all(color: AppColors.borderLight),
+              border: Border.all(color: Theme.of(context).dividerColor),
             ),
             child: TextField(
               controller: _nameCtrl,
@@ -136,10 +136,10 @@ class _GenderCard extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFEEF2FF) : Colors.white,
+          color: selected ? AppColors.primary.withValues(alpha: 0.15) : Theme.of(context).cardColor,
           borderRadius: AppRadius.lg,
           border: Border.all(
-            color: selected ? AppColors.primary : AppColors.borderLight,
+            color: selected ? AppColors.primary : Theme.of(context).dividerColor,
             width: selected ? 2 : 1,
           ),
         ),
@@ -151,7 +151,7 @@ class _GenderCard extends StatelessWidget {
               label,
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: selected ? AppColors.primary : AppColors.textPrimary,
+                color: selected ? AppColors.primary : Theme.of(context).textTheme.bodyLarge?.color,
               ),
             ),
           ],

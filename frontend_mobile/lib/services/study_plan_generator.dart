@@ -1,4 +1,3 @@
-import 'dart:math' show min, max;
 import 'package:flutter/material.dart';
 import '../models/onboarding_data.dart';
 import '../models/study_plan.dart';
@@ -23,7 +22,7 @@ int _toMins(TimeOfDay t) => t.hour * 60 + t.minute;
 TimeOfDay _fromMins(int m) =>
     TimeOfDay(hour: (m ~/ 60) % 24, minute: m % 60);
 
-// Kullanıcının seçtiği saat = tam bütçe (okul saati start-time'da hesaplanıyor)
+// Kullanıcının seçtiği saat = tam bütçe
 int _calcNetMinutes(int rawHours) => (rawHours * 60).clamp(60, 600);
 
 TimeOfDay _roundStartTime(TimeOfDay t) {
@@ -77,34 +76,10 @@ StudyBlock _proto({
       emoji: emoji ?? _getSubjectEmoji(subject),
     );
 
-// Günün ders slotu sayısını hesapla (75% zayıf / 25% güçlü hedefi)
-({int weaks, int strongs}) _slotsForDay({
-  required int net,
-  required int numWeak,
-  required int numStrong,
-}) {
-  if (numWeak == 0 && numStrong == 0) return (weaks: 0, strongs: 0);
-
-  if (numStrong == 0) {
-    return (weaks: min(numWeak, net ~/ 60), strongs: 0);
-  }
-
-  // Bütçenin %25'ini güçlü dersler için ayır, min 1
-  final targetStrongs = max(1, min(numStrong, ((net * 0.25) / 40).round()));
-  final remainingForWeak = net - targetStrongs * 40;
-
-  if (remainingForWeak < 60 && numWeak > 0) {
-    // Çok dar bütçe: güçlü dersi bırak, zayıf dersi tercih et
-    return (weaks: min(numWeak, net ~/ 60), strongs: 0);
-  }
-
-  return (
-    weaks: numWeak == 0 ? 0 : min(numWeak, remainingForWeak ~/ 60),
-    strongs: targetStrongs,
-  );
-}
-
-// Belirli güne ait seçilmiş dersleri blok + saat olarak oluştur
+// Belirli güne ait blokları döngüsel dolgu mantığıyla oluştur.
+// Güçlü blok: 30 dk. Zayıf blok: 60 dk.
+// Sıra: zayıf, zayıf, güçlü, zayıf, zayıf, güçlü … (yaklaşık 75/25)
+// Bütçe dolana kadar döngü devam eder. Mola sadece bir kez, yaklaşık ortaya eklenir.
 List<StudyBlock> _buildDayBlocks({
   required List<String> weakSubjects,
   required List<String> strongSubjects,
@@ -115,37 +90,107 @@ List<StudyBlock> _buildDayBlocks({
   required Map<String, int> weakOccurrences,
   required Map<String, int> strongOccurrences,
 }) {
+  const weakDur = 60;
+  const strongDur = 30;
+
+  final hasWeak = weakSubjects.isNotEmpty;
+  final hasStrong = strongSubjects.isNotEmpty;
+
+  if (!hasWeak && !hasStrong) return [];
+
+  // Mola süresi (bütçeden DÜŞÜLMEZ — ders saati bütçesi tam korunur)
+  final molaDur = net >= 360 ? 60 : 30;
+
+  // Yeterince bütçe var mı kontrol et (en az 1 blok sığmalı)
+  final minBlock = hasWeak ? weakDur : strongDur;
+  if (net < minBlock) return [];
+
+  // Ders bloklarına ayrılan bütçe = tam net (mola ek olarak gelir)
+  final budgetForStudy = net;
+  if (budgetForStudy <= 0) return [];
+
+  // Sıra: zayıf bloklar → mola (zayıfların ortasına) → güçlü bloklar
+  // Zayıf bloklar önce bütçeyi doldurur, kalan bütçeye güçlü bloklar eklenir.
+  // Güçlü sayısı zayıf sayısını geçemez.
+  final weakBlocks = <StudyBlock>[];
+  final strongBlocks = <StudyBlock>[];
+  int weakCursor = 0;
+  int strongCursor = 0;
   int counter = 0;
 
-  final weakBlocks = weakSubjects.map((s) {
-    final count = weakOccurrences[s] ?? 0;
-    weakOccurrences[s] = count + 1;
-    // 1. görünüm → konu_anlatimi, 2. → soru_cozumu, sonra tekrar
-    final type = count.isEven ? 'konu_anlatimi' : 'soru_cozumu';
-    return _proto(
+  // w×60 + s×30 = net, s ≤ w olacak şekilde w ve s'yi bul.
+  // En fazla güçlü dersi alacak şekilde çöz (tam doldurma öncelikli).
+  int targetWeak = 0;
+  int targetStrong = 0;
+
+  if (!hasWeak) {
+    // Sadece güçlü ders varsa tümünü doldur
+    targetStrong = budgetForStudy ~/ strongDur;
+  } else if (!hasStrong) {
+    targetWeak = budgetForStudy ~/ weakDur;
+  } else {
+    // Her iki tür de var: w×60 + s×30 = net, s ≤ w
+    // w=1'den başlayarak artır, her w için max s hesapla, tam dolduranı seç.
+    // Tam doldurulamazsa en yakını al.
+    int bestW = 0, bestS = 0, bestRemainder = budgetForStudy;
+    for (int w = 1; w * weakDur <= budgetForStudy; w++) {
+      final remaining = budgetForStudy - w * weakDur;
+      final s = (remaining ~/ strongDur).clamp(0, w);
+      final remainder = remaining - s * strongDur;
+      if (remainder < bestRemainder) {
+        bestRemainder = remainder;
+        bestW = w;
+        bestS = s;
+      }
+      if (remainder == 0) break; // tam dolduruldu, daha fazla aramanın gereği yok
+    }
+    targetWeak = bestW;
+    targetStrong = bestS;
+  }
+
+  // Determine starting cursor positions based on total occurrences so far,
+  // so consecutive days cycle through subjects fairly rather than restarting.
+  final totalWeakSoFar =
+      weakOccurrences.values.fold(0, (s, v) => s + v);
+  final totalStrongSoFar =
+      strongOccurrences.values.fold(0, (s, v) => s + v);
+  weakCursor = weakSubjects.isNotEmpty ? totalWeakSoFar % weakSubjects.length : 0;
+  strongCursor = strongSubjects.isNotEmpty ? totalStrongSoFar % strongSubjects.length : 0;
+
+  for (int i = 0; i < targetWeak; i++) {
+    final subject = weakSubjects[weakCursor % weakSubjects.length];
+    weakCursor++;
+    final count = weakOccurrences[subject] ?? 0;
+    weakOccurrences[subject] = count + 1;
+    weakBlocks.add(_proto(
       id: 'w_${dayOffset}_${counter++}',
-      subject: s,
-      dur: 60,
+      subject: subject,
+      dur: weakDur,
       isStrong: false,
-      type: type,
-    );
-  }).toList();
+      type: count.isEven ? 'konu_anlatimi' : 'soru_cozumu',
+    ));
+  }
 
-  final strongBlocks = strongSubjects.map((s) {
-    final count = strongOccurrences[s] ?? 0;
-    strongOccurrences[s] = count + 1;
-    // 1. görünüm → soru_cozumu, 2. → konu_anlatimi, sonra tekrar
-    final type = count.isEven ? 'soru_cozumu' : 'konu_anlatimi';
-    return _proto(
+  for (int i = 0; i < targetStrong; i++) {
+    final subject = strongSubjects[strongCursor % strongSubjects.length];
+    strongCursor++;
+    final count = strongOccurrences[subject] ?? 0;
+    strongOccurrences[subject] = count + 1;
+    strongBlocks.add(_proto(
       id: 's_${dayOffset}_${counter++}',
-      subject: s,
-      dur: 40,
+      subject: subject,
+      dur: strongDur,
       isStrong: true,
-      type: type,
-    );
-  }).toList();
+      type: count.isEven ? 'soru_cozumu' : 'konu_anlatimi',
+    ));
+  }
 
-  final molaDur = net >= 360 ? 60 : 30;
+  final weakBlockCount = weakBlocks.length;
+  final rawBlocks = [...weakBlocks, ...strongBlocks];
+
+  if (rawBlocks.isEmpty) return [];
+
+  // Mola bloğunu oluştur
   final molaBlock = _proto(
     id: 'm_${dayOffset}_mola',
     subject: 'Mola',
@@ -156,19 +201,14 @@ List<StudyBlock> _buildDayBlocks({
     emoji: '☕',
   );
 
-  // Düzen: [zayıf...] mola [güçlü...]
-  // Zayıf ders varsa mola her zaman eklenir
-  final fitting = <StudyBlock>[...weakBlocks];
+  // Mola zayıf blokların tam ortasına girer (ceil(weakCount/2). zayıftan sonra)
+  final molaAfterWeakN = (weakBlockCount / 2).ceil().clamp(1, weakBlockCount);
+  final insertIdx = molaAfterWeakN; // rawBlocks'ta ilk weakBlockCount eleman zayıf
 
-  if (weakBlocks.isNotEmpty) {
-    fitting.add(molaBlock);
-  }
+  final fitting = <StudyBlock>[...rawBlocks];
+  fitting.insert(insertIdx, molaBlock);
 
-  fitting.addAll(strongBlocks);
-
-  if (fitting.isEmpty) return [];
-
-  // Başlangıç saati
+  // Başlangıç saatini hesapla
   int startMins;
   if (data.studyType == 'sabah') {
     if (!isWeekend && data.hasWeekdaySchool) {
@@ -179,14 +219,15 @@ List<StudyBlock> _buildDayBlocks({
       startMins = 9 * 60;
     }
   } else {
-    final latestStr = isWeekend ? data.weekendLatestTime : data.weekdayLatestTime;
+    final latestStr =
+        isWeekend ? data.weekendLatestTime : data.weekdayLatestTime;
     final totalSched = fitting.fold<int>(0, (s, b) => s + b.durationMinutes) +
         (fitting.length > 1 ? (fitting.length - 1) * 10 : 0);
     startMins = _toMins(_parseTime(latestStr)) - totalSched;
     if (startMins < 14 * 60) startMins = 14 * 60;
   }
 
-  // Saatleri ata — ilk başlangıç yuvarlanır, sonrakiler prevEnd + 10
+  // Saatleri ata
   TimeOfDay current = _roundStartTime(_fromMins(startMins));
   final result = <StudyBlock>[];
 
@@ -222,13 +263,6 @@ List<StudyDay> _generateWeeklyPlan(OnboardingData data) {
   final now = DateTime.now();
   final days = <StudyDay>[];
 
-  final numWeak = data.weakSubjects.length;
-  final numStrong = data.strongSubjects.length;
-
-  // Haftalık rotasyon: her gün farklı ders alt-kümesi
-  int weakIdx = 0;
-  int strongIdx = 0;
-
   // Her dersin kaçıncı kez göründüğünü izle (görev türü rotasyonu için)
   final weakOccurrences = <String, int>{};
   final strongOccurrences = <String, int>{};
@@ -249,31 +283,15 @@ List<StudyDay> _generateWeeklyPlan(OnboardingData data) {
     }
 
     final isWeekend = dayIdx >= 5;
-    final net =
-        _calcNetMinutes(isWeekend ? data.weekendStudyHours : data.weekdayStudyHours);
-
-    final slots = _slotsForDay(net: net, numWeak: numWeak, numStrong: numStrong);
-
-    // Bu günün derslerini döngüsel indeksle seç
-    final dayWeakSubjects = List.generate(
-      slots.weaks,
-      (i) => data.weakSubjects[(weakIdx + i) % numWeak],
-    );
-    final dayStrongSubjects = List.generate(
-      slots.strongs,
-      (i) => data.strongSubjects[(strongIdx + i) % numStrong],
-    );
-
-    // İndeksleri ilerlet (bir sonraki gün farklı derslerden başlasın)
-    if (numWeak > 0) weakIdx = (weakIdx + slots.weaks) % numWeak;
-    if (numStrong > 0) strongIdx = (strongIdx + slots.strongs) % numStrong;
+    final net = _calcNetMinutes(
+        isWeekend ? data.weekendStudyHours : data.weekdayStudyHours);
 
     days.add(StudyDay(
       date: date,
       dayName: dayName,
       blocks: _buildDayBlocks(
-        weakSubjects: dayWeakSubjects,
-        strongSubjects: dayStrongSubjects,
+        weakSubjects: data.weakSubjects,
+        strongSubjects: data.strongSubjects,
         net: net,
         isWeekend: isWeekend,
         data: data,

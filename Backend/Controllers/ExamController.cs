@@ -30,7 +30,7 @@ namespace Backend.Controllers
         {
             var userId = GetUserId();
             var result = await _examService.AddExamAsync(userId, dto);
-            return CreatedAtAction(nameof(GetExams), new { }, result);
+            return Ok(result);
         }
 
         [HttpGet]
@@ -38,6 +38,32 @@ namespace Backend.Controllers
         {
             var userId = GetUserId();
             var exams = await _examService.GetExamResultsAsync(userId);
+            return Ok(exams);
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteExam(int id)
+        {
+            var userId = GetUserId();
+            var result = await _examService.DeleteExamAsync(userId, id);
+            if (!result) return NotFound();
+            return NoContent();
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateExam(int id, [FromBody] CreateExamDto dto)
+        {
+            var userId = GetUserId();
+            var result = await _examService.UpdateExamAsync(userId, id, dto);
+            if (result == null) return NotFound();
+            return Ok(result);
+        }
+
+        [HttpGet("bytype/{type}")]
+        public async Task<IActionResult> GetExamsByType(string type)
+        {
+            var userId = GetUserId();
+            var exams = await _examService.GetExamsByTypeAsync(userId, type);
             return Ok(exams);
         }
 

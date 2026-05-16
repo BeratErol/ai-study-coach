@@ -11,8 +11,8 @@ class ApiService {
   ApiService() {
     _dio = Dio(BaseOptions(
       baseUrl: ApiConstants.baseUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 30),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -29,16 +29,27 @@ class ApiService {
         return handler.next(options);
       },
       onError: (DioException e, handler) async {
+        final status = e.response?.statusCode ?? 0;
+        final path = e.requestOptions.path;
+
         if (e.type == DioExceptionType.connectionError ||
             e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout) {
           showGlobalSnackBar('İnternet bağlantınızı kontrol edin.');
-        } else if (e.response?.statusCode == 401) {
+        } else if (status == 401) {
           const storage = FlutterSecureStorage();
           await storage.delete(key: 'jwt_token');
           showGlobalSnackBar('Oturumunuz sona erdi. Lütfen tekrar giriş yapın.');
           navigatorKey.currentContext?.go('/login');
-        } else if ((e.response?.statusCode ?? 0) >= 500) {
+        } else if ((status == 404 || status >= 500) &&
+            (path.contains('UserProfile') ||
+             path.contains('DailyReport') ||
+             path.contains('gelisimim') ||
+             path.contains('Gelisimim') ||
+             path.contains('questionlog') ||
+             path.contains('QuestionLog'))) {
+          // Yeni kullanıcı / boş veri — sessizce geç
+        } else if (status >= 500) {
           showGlobalSnackBar('Sunucu hatası, lütfen tekrar deneyin.');
         }
         return handler.next(e);

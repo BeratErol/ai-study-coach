@@ -16,6 +16,7 @@ namespace Backend.Data
         public DbSet<Exam> Exams { get; set; } = null!;
         public DbSet<ExamDetail> ExamDetails { get; set; } = null!;
         public DbSet<UserProfile> UserProfiles { get; set; } = null!;
+        public DbSet<QuestionLog> QuestionLogs { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -158,6 +159,28 @@ namespace Backend.Data
                 entity.HasIndex(e => e.UserId).IsUnique().HasDatabaseName("idx_kullanici_profil_unique");
             });
             modelBuilder.Entity<UserProfile>().ToTable("kullanici_profilleri");
+
+            // QuestionLog configuration
+            modelBuilder.Entity<QuestionLog>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.UserId).HasColumnName("kullanici_id").IsRequired();
+                entity.Property(e => e.Date).HasColumnName("tarih").IsRequired().HasMaxLength(10);
+                entity.Property(e => e.SubjectKey).HasColumnName("ders_anahtar").IsRequired().HasMaxLength(50);
+                entity.Property(e => e.SubjectName).HasColumnName("ders_adi").IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Count).HasColumnName("soru_sayisi").IsRequired();
+
+                entity.HasOne(d => d.User)
+                    .WithMany()
+                    .HasForeignKey(d => d.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => new { e.UserId, e.Date, e.SubjectKey })
+                    .IsUnique()
+                    .HasDatabaseName("idx_soru_log_unique");
+            });
+            modelBuilder.Entity<QuestionLog>().ToTable("soru_kayitlari");
 
             // ExamDetail configuration
             modelBuilder.Entity<ExamDetail>(entity =>

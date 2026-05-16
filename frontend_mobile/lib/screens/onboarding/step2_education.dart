@@ -17,16 +17,16 @@ class Step2Education extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: const [
-              Text('🎓', style: TextStyle(fontSize: 26)),
-              SizedBox(width: 8),
+            children: [
+              const Text('🎓', style: TextStyle(fontSize: 26)),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Eğitim Serüveninde Hangi Kademedesin?',
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
                   ),
                 ),
               ),
@@ -103,10 +103,10 @@ class _EducationCard extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFEEF2FF) : Colors.white,
+          color: selected ? AppColors.primary.withValues(alpha: 0.15) : Theme.of(context).cardColor,
           borderRadius: AppRadius.lg,
           border: Border.all(
-            color: selected ? AppColors.primary : AppColors.borderLight,
+            color: selected ? AppColors.primary : Theme.of(context).dividerColor,
             width: selected ? 2 : 1,
           ),
         ),
@@ -123,14 +123,14 @@ class _EducationCard extends StatelessWidget {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
-                      color: selected ? AppColors.primary : AppColors.textPrimary,
+                      color: selected ? AppColors.primary : Theme.of(context).textTheme.bodyLarge?.color,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodySmall?.color,
                       fontSize: 13,
                     ),
                   ),

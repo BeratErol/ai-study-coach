@@ -1,6 +1,30 @@
 @import "tailwindcss";
 @variant dark (&:where(.dark, .dark *));
 
+:root {
+  --primary: #4F46E5;
+  --primary-dark: #6D28D9;
+  --bg: #F8F7FF;
+  --card: #FFFFFF;
+  --border: #E5E7EB;
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+  --text-hint: #9CA3AF;
+  --success: #10B981;
+  --error: #EF4444;
+  --warning: #F59E0B;
+  --sidebar-width: 280px;
+}
+
+.dark {
+  --bg: #0F0F1A;
+  --card: #1A1A2E;
+  --border: #2D2D44;
+  --text-primary: #E2E8F0;
+  --text-secondary: #94A3B8;
+  --text-hint: #64748B;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -9,17 +33,23 @@
 
 html, body {
   width: 100%;
-  min-height: 100vh;
+  height: 100%;
 }
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: #F8F7FF;
-  color: #111827;
+  background-color: var(--bg);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
 }
 
 #root {
   width: 100%;
-  min-height: 100vh;
+  height: 100%;
 }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-hint); }

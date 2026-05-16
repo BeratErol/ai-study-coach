@@ -136,6 +136,50 @@ namespace Backend.Migrations
                     b.ToTable("dersler", (string)null);
                 });
 
+            modelBuilder.Entity("Backend.Models.QuestionLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Count")
+                        .HasColumnType("integer")
+                        .HasColumnName("soru_sayisi");
+
+                    b.Property<string>("Date")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("tarih");
+
+                    b.Property<string>("SubjectKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("ders_anahtar");
+
+                    b.Property<string>("SubjectName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ders_adi");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer")
+                        .HasColumnName("kullanici_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Date", "SubjectKey")
+                        .IsUnique()
+                        .HasDatabaseName("idx_soru_log_unique");
+
+                    b.ToTable("soru_kayitlari", (string)null);
+                });
+
             modelBuilder.Entity("Backend.Models.StudySession", b =>
                 {
                     b.Property<int>("Id")
@@ -417,6 +461,17 @@ namespace Backend.Migrations
                 {
                     b.HasOne("Backend.Models.User", "User")
                         .WithMany("Lessons")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Backend.Models.QuestionLog", b =>
+                {
+                    b.HasOne("Backend.Models.User", "User")
+                        .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

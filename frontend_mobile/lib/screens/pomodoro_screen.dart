@@ -5,6 +5,7 @@ import 'package:percent_indicator/percent_indicator.dart';
 import '../core/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../widgets/study_with_me_card.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -437,6 +438,10 @@ class _PomodoroScreenState extends ConsumerState<PomodoroScreen>
                 error: (e, s) => const SizedBox.shrink(),
               ),
               const SizedBox(height: AppSpacing.lg),
+
+              // ── Study With Me ─────────────────────────────────────────────
+              if (_isWorkSession) const StudyWithMeCard(),
+              if (_isWorkSession) const SizedBox(height: AppSpacing.lg),
 
               // ── Today's sessions ──────────────────────────────────────────
               _TodaySessionsSection(sessions: todaySessions),

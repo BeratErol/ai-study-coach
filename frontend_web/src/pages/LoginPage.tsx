@@ -3,7 +3,9 @@ import { useNavigate, Link, useLocation } from 'react-router-dom'
 import api from '../services/api'
 import { setToken } from '../hooks/useAuth'
 import { getUserId } from '../services/tokenService'
-import { isOnboardingCompleted, setOnboardingCompleted } from '../services/userPrefsService'
+import { isOnboardingCompleted, setOnboardingCompleted, getOnboardingData, saveOnboardingData } from '../services/userPrefsService'
+import { generateAndStorePlan } from '../services/studyPlanLocal'
+import { defaultOnboardingData, type OnboardingData } from '../models/OnboardingData'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -17,20 +19,54 @@ export default function LoginPage() {
   const [error, setError]       = useState<string | null>(null)
 
   async function checkOnboardingStatus() {
+    const userId = getUserId() ?? ''
     try {
-      await api.get('/UserProfile')
-      const userId = getUserId() ?? ''
-      setOnboardingCompleted(userId, true)
-      navigate('/dashboard')
+      const res = await api.get('/UserProfile')
+      if (res.status === 200 && res.data) {
+        // Backend'de profil var → onboarding tamamlanmış (mobil veya web).
+        // Profili localStorage'a indir ve haftalık planı üret ki dashboard dolu gelsin.
+        setOnboardingCompleted(userId, true)
+        if (!getOnboardingData(userId)) {
+          const p = res.data
+          const data: OnboardingData = {
+            ...defaultOnboardingData,
+            gender: p.gender ?? '',
+            educationLevel: p.educationLevel ?? '',
+            targetExam: p.targetExam ?? '',
+            selectedArea: p.selectedArea ?? '',
+            examDate: p.examDate ?? null,
+            studyType: p.studyType ?? '',
+            hasWeekdaySchool: p.hasWeekdaySchool ?? false,
+            weekdayStartTime: p.weekdayStartTime || defaultOnboardingData.weekdayStartTime,
+            weekdayEndTime: p.weekdayEndTime || defaultOnboardingData.weekdayEndTime,
+            weekdayStudyHours: p.weekdayStudyHours ?? defaultOnboardingData.weekdayStudyHours,
+            hasWeekendCourse: p.hasWeekendCourse ?? false,
+            weekendStartTime: p.weekendStartTime || defaultOnboardingData.weekendStartTime,
+            weekendStudyHours: p.weekendStudyHours ?? defaultOnboardingData.weekendStudyHours,
+            weekdayLatestTime: p.weekdayLatestTime || defaultOnboardingData.weekdayLatestTime,
+            weekendLatestTime: p.weekendLatestTime || defaultOnboardingData.weekendLatestTime,
+            offDays: Array.isArray(p.offDays) ? p.offDays : [],
+            strongSubjects: Array.isArray(p.strongSubjects) ? p.strongSubjects : [],
+            weakSubjects: Array.isArray(p.weakSubjects) ? p.weakSubjects : [],
+          }
+          saveOnboardingData(userId, data)
+          generateAndStorePlan(userId, data)
+        }
+        navigate('/dashboard')
+        return
+      }
     } catch (err: any) {
       if (err.response?.status === 404) {
-        navigate('/onboarding')
-      } else {
-        const userId = getUserId() ?? ''
-        const completed = isOnboardingCompleted(userId)
-        navigate(completed ? '/dashboard' : '/onboarding')
+        // Profil yok → daha önce web'de onboarding tamamlandıysa dashboard'a git
+        const webCompleted = isOnboardingCompleted(userId)
+        navigate(webCompleted ? '/dashboard' : '/onboarding')
+        return
       }
+      // Diğer hatalar (ağ, 500): local duruma göre karar ver
+      navigate(isOnboardingCompleted(userId) ? '/dashboard' : '/onboarding')
+      return
     }
+    navigate('/dashboard')
   }
 
   async function handleSubmit(e: FormEvent) {

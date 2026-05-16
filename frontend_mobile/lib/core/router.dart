@@ -6,12 +6,11 @@ import '../screens/register_screen.dart';
 import '../screens/shell_screen.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/lessons_screen.dart';
-import '../screens/pomodoro_screen.dart';
-import '../screens/stats_screen.dart';
+import '../screens/gelisimim_screen.dart';
+import '../screens/denemeler_screen.dart';
 import '../screens/profile_screen.dart';
 import '../screens/lesson_detail_screen.dart';
 import '../screens/task_create_screen.dart';
-import '../screens/exam_result_screen.dart';
 import '../screens/onboarding_screen.dart';
 import '../screens/study_session_screen.dart';
 import '../models/study_task.dart';
@@ -27,11 +26,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),
         routes: [
-          GoRoute(path: '/dashboard', builder: (ctx, s) => const DashboardScreen()),
-          GoRoute(path: '/lessons',   builder: (ctx, s) => const LessonsScreen()),
-          GoRoute(path: '/pomodoro',  builder: (ctx, s) => const PomodoroScreen()),
-          GoRoute(path: '/stats',     builder: (ctx, s) => const StatsScreen()),
-          GoRoute(path: '/profile',   builder: (ctx, s) => const ProfileScreen()),
+          GoRoute(path: '/dashboard',  builder: (ctx, s) => const DashboardScreen()),
+          GoRoute(path: '/gelisimim',  builder: (ctx, s) => const GelisimimScreen()),
+          GoRoute(path: '/denemeler',  builder: (ctx, s) => const DenemeScreen()),
+          GoRoute(path: '/profile',    builder: (ctx, s) => const ProfileScreen()),
+          GoRoute(path: '/lessons',    builder: (ctx, s) => const LessonsScreen()),
           GoRoute(
             path: '/lessons/:id',
             builder: (ctx, state) {
@@ -39,8 +38,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               return LessonDetailScreen(lesson: lesson);
             },
           ),
-          GoRoute(path: '/task/new',    builder: (ctx, s) => const TaskCreateScreen()),
-              GoRoute(path: '/exam/result', builder: (ctx, s) => const ExamResultScreen()),
+          GoRoute(path: '/task/new', builder: (ctx, s) => const TaskCreateScreen()),
         ],
       ),
       GoRoute(

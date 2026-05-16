@@ -3,6 +3,7 @@ import api from '../services/api'
 import { defaultOnboardingData, type OnboardingData } from '../models/OnboardingData'
 import { getUserId } from '../services/tokenService'
 import { setOnboardingCompleted, saveOnboardingData } from '../services/userPrefsService'
+import { generateAndStorePlan } from '../services/studyPlanLocal'
 
 interface OnboardingStore extends OnboardingData {
   updateName: (v: string) => void
@@ -79,6 +80,7 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
     }
     setOnboardingCompleted(userId, true)
     saveOnboardingData(userId, data)
+    generateAndStorePlan(userId, data)
     try {
       await api.post('/UserProfile', data)
     } catch {

@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../core/app_theme.dart';
+import '../widgets/chatbot_fab.dart';
 
 class ShellScreen extends StatelessWidget {
   final Widget child;
   const ShellScreen({super.key, required this.child});
 
   static const _tabs = [
-    (icon: Icons.home_rounded,       label: 'Ana Sayfa', path: '/dashboard'),
-    (icon: Icons.menu_book_rounded,  label: 'Dersler',   path: '/lessons'),
-    (icon: Icons.timer_rounded,      label: 'Pomodoro',  path: '/pomodoro'),
-    (icon: Icons.bar_chart_rounded,  label: 'İstatistik',path: '/stats'),
-    (icon: Icons.person_rounded,     label: 'Profil',    path: '/profile'),
+    (icon: Icons.home_rounded,        label: 'Ana Sayfa', path: '/dashboard'),
+    (icon: Icons.trending_up_rounded, label: 'Gelişimim', path: '/gelisimim'),
+    (icon: Icons.assignment_rounded,  label: 'Denemeler', path: '/denemeler'),
+    (icon: Icons.person_rounded,      label: 'Profil',    path: '/profile'),
   ];
 
   int _currentIndex(BuildContext context) {
@@ -28,7 +28,17 @@ class ShellScreen extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      body: child,
+      body: Stack(
+        children: [
+          child,
+          // Chatbot FAB — sağ üst, status bar altında
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            right: 16,
+            child: const ChatbotFAB(),
+          ),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(

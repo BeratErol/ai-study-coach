@@ -39,25 +39,25 @@ class Step6DailyRoutine extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: const [
-              Text('🏫', style: TextStyle(fontSize: 26)),
-              SizedBox(width: 8),
+            children: [
+              const Text('🏫', style: TextStyle(fontSize: 26)),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Okul & Çalışma Planın',
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Haftalık planını okul, kurs ve iş saatlerine göre otomatikleştireceğiz.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+            style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 24),
 
@@ -171,9 +171,9 @@ class Step6DailyRoutine extends ConsumerWidget {
           // ── Tatil Günleri ──
           _sectionTitle('Ders Olmasını İstemediğin Günler'),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Seçtiğin günlerde programa ders atanmaz.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 13),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -195,16 +195,16 @@ class Step6DailyRoutine extends ConsumerWidget {
                   duration: const Duration(milliseconds: 150),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                   decoration: BoxDecoration(
-                    color: selected ? AppColors.primary : Colors.white,
+                    color: selected ? AppColors.primary : Theme.of(context).cardColor,
                     borderRadius: AppRadius.full,
                     border: Border.all(
-                      color: selected ? AppColors.primary : AppColors.borderLight,
+                      color: selected ? AppColors.primary : Theme.of(context).dividerColor,
                     ),
                   ),
                   child: Text(
                     _dayLabels[i],
                     style: TextStyle(
-                      color: selected ? Colors.white : AppColors.textPrimary,
+                      color: selected ? Colors.white : Theme.of(context).textTheme.bodyLarge?.color,
                       fontWeight: FontWeight.w600,
                       fontSize: 14,
                     ),
@@ -246,9 +246,9 @@ class Step6DailyRoutine extends ConsumerWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: AppRadius.md,
-        border: Border.all(color: AppColors.borderLight),
+        border: Border.all(color: Theme.of(context).dividerColor),
       ),
       child: Column(
         children: [

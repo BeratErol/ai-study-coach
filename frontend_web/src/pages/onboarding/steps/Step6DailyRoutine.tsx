@@ -1,4 +1,5 @@
 import { useOnboardingStore } from '../../../stores/onboardingStore'
+import StepHeader from './StepHeader'
 
 const DAY_LABELS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cts', 'Paz']
 
@@ -46,14 +47,8 @@ export default function Step6DailyRoutine() {
   }
 
   return (
-    <div className="w-full">
-      <div className="mb-10">
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-6xl">📅</span>
-          <h2 className="text-4xl font-bold text-gray-900 leading-tight">Günlük Rutinin</h2>
-        </div>
-        <p className="text-lg text-gray-500 mt-3">Okul/kurs saatlerin ve çalışma süren</p>
-      </div>
+    <div className="w-full max-w-3xl mx-auto">
+      <StepHeader emoji="📅" title="Günlük Rutinin" subtitle="Okul/kurs saatlerin ve çalışma süren" />
 
       {/* Hafta içi */}
       <div className="bg-slate-50 rounded-3xl border-2 border-gray-200 p-6 mb-5">

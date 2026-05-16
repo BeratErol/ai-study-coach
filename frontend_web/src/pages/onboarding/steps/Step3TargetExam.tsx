@@ -1,13 +1,22 @@
 import { useOnboardingStore } from '../../../stores/onboardingStore'
+import StepHeader from './StepHeader'
 
 const examsByLevel: Record<string, { icon: string; title: string; subtitle: string; value: string }[]> = {
-  ortaokul: [{ icon: '📋', title: 'LGS', subtitle: 'Liselere Geçiş Sınavı (8. Sınıf)', value: 'LGS' }],
-  lise: [{ icon: '🎓', title: 'YKS', subtitle: 'Yükseköğretim Kurumları Sınavı', value: 'YKS' }],
+  ortaokul: [
+    { icon: '📋', title: 'LGS', subtitle: 'Liselere Geçiş Sınavı (8. Sınıf)', value: 'LGS' },
+    { icon: '🏫', title: 'Bursluluk Sınavı', subtitle: 'İlköğretim ve Ortaöğretim Bursluluk', value: 'Bursluluk' },
+  ],
+  lise: [
+    { icon: '🎓', title: 'YKS', subtitle: 'Yükseköğretim Kurumları Sınavı (TYT/AYT)', value: 'YKS' },
+    { icon: '🏥', title: 'Sağlık Bilimleri (TUS)', subtitle: 'Tıpta Uzmanlık Sınavı hazırlığı', value: 'TUS' },
+  ],
   universite: [
     { icon: '🏢', title: 'KPSS', subtitle: 'Kamu Personeli Seçme Sınavı', value: 'KPSS' },
-    { icon: '📐', title: 'ALES', subtitle: 'Akademik Personel ve Lisansüstü Eğitimi Giriş Sınavı', value: 'ALES' },
-    { icon: '🌐', title: 'YDS', subtitle: 'Yabancı Dil Sınavı', value: 'YDS' },
-    { icon: '👩‍🏫', title: 'Öğretmenlik', subtitle: 'AGS ve ÖABT', value: 'Öğretmenlik' },
+    { icon: '📐', title: 'ALES', subtitle: 'Akademik Personel ve Lisansüstü Eğitimi', value: 'ALES' },
+    { icon: '🌐', title: 'YDS / YÖKDİL', subtitle: 'Yabancı Dil Bilgisi Sınavı', value: 'YDS' },
+    { icon: '👩‍🏫', title: 'Öğretmenlik (ÖABT)', subtitle: 'Alan Bilgisi ve AGS sınavları', value: 'Öğretmenlik' },
+    { icon: '🔄', title: 'DGS', subtitle: 'Dikey Geçiş Sınavı (Önlisans → Lisans)', value: 'DGS' },
+    { icon: '🏥', title: 'TUS / DUS / YDUS', subtitle: 'Sağlık Bilimleri Uzmanlık Sınavları', value: 'TUS' },
   ],
 }
 
@@ -25,16 +34,10 @@ export default function Step3TargetExam() {
   }
 
   return (
-    <div className="w-full">
-      <div className="mb-10">
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-6xl">🎯</span>
-          <h2 className="text-4xl font-bold text-gray-900 leading-tight">Hedefin Ne?</h2>
-        </div>
-        <p className="text-lg text-gray-500 mt-3">Sınav hedefini seç</p>
-      </div>
+    <div className="w-full max-w-4xl mx-auto">
+      <StepHeader emoji="🎯" title="Hedefin Ne?" subtitle="Sınav hedefini seç" />
 
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {exams.map((exam) => (
           <button
             key={exam.value}

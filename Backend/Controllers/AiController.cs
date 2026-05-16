@@ -38,6 +38,23 @@ namespace Backend.Controllers
             throw new UnauthorizedAccessException("Geçersiz kullanıcı kimliği.");
         }
 
+        [HttpPost("chat")]
+        public async Task<IActionResult> Chat([FromBody] ChatRequestDto request)
+        {
+            if (request.Messages == null || !request.Messages.Any())
+                return BadRequest(new { message = "Mesaj listesi boş olamaz." });
+
+            try
+            {
+                var result = await _aiService.ChatAsync(request);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Chatbot yanıt veremedi.", detail = ex.Message });
+            }
+        }
+
         [HttpPost("plan")]
         public async Task<IActionResult> GeneratePlan([FromBody] AiPlanRequestDto request)
         {

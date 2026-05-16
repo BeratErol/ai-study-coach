@@ -1,4 +1,5 @@
 import { useOnboardingStore } from '../../../stores/onboardingStore'
+import StepHeader from './StepHeader'
 
 function TimeRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
@@ -24,17 +25,12 @@ export default function Step7SleepTime() {
   } = useOnboardingStore()
 
   return (
-    <div className="w-full">
-      <div className="mb-10">
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-6xl">🌙</span>
-          <h2 className="text-4xl font-bold text-gray-900 leading-tight">En Geç Saat</h2>
-        </div>
-        <p className="text-lg text-gray-500 mt-3 leading-relaxed">
-          Gece Baykuşu modunda program bu saatte bitecek şekilde ayarlanır.
-          Sabah Kuşu için bu saat referans alınmaz.
-        </p>
-      </div>
+    <div className="w-full max-w-2xl mx-auto">
+      <StepHeader
+        emoji="🌙"
+        title="En Geç Saat"
+        subtitle="Gece Baykuşu modunda program bu saatte biter. Sabah Kuşu için referans alınmaz."
+      />
 
       <div className="flex flex-col gap-4">
         <TimeRow

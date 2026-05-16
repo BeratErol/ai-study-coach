@@ -53,23 +53,23 @@ class Step4ExamDate extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: const [
-              Text('📅', style: TextStyle(fontSize: 26)),
-              SizedBox(width: 8),
+            children: [
+              const Text('📅', style: TextStyle(fontSize: 26)),
+              const SizedBox(width: 8),
               Text(
                 'Sınav Ne Zaman?',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Geri sayım ve kamp modu için sınav tarihini belirle',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 14),
           ),
           const SizedBox(height: 28),
           GestureDetector(
@@ -77,10 +77,10 @@ class Step4ExamDate extends ConsumerWidget {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).cardColor,
                 borderRadius: AppRadius.lg,
                 border: Border.all(
-                  color: examDate != null ? AppColors.primary : AppColors.borderLight,
+                  color: examDate != null ? AppColors.primary : Theme.of(context).dividerColor,
                   width: examDate != null ? 2 : 1,
                 ),
               ),
@@ -103,11 +103,11 @@ class Step4ExamDate extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Tarih Seç',
                           style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.textSecondary,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -117,16 +117,16 @@ class Step4ExamDate extends ConsumerWidget {
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: examDate != null
-                                ? AppColors.textPrimary
+                                ? Theme.of(context).textTheme.bodyLarge?.color
                                 : AppColors.textHint,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const Icon(
+                  Icon(
                     Icons.chevron_right_rounded,
-                    color: AppColors.textSecondary,
+                    color: Theme.of(context).textTheme.bodySmall?.color,
                   ),
                 ],
               ),

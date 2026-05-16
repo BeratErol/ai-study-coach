@@ -9,5 +9,6 @@ namespace Backend.Services
         Task<string> GenerateTextRecommendationAsync(string prompt);
         Task<List<AiPlanResponseDto>> OptimizePlanAsync(int userId, ExamAnalysisDto analysis);
         Task<DashboardCoachResponseDto> GenerateDashboardCoachAsync(DashboardCoachRequestDto context);
+        Task<ChatResponseDto> ChatAsync(ChatRequestDto request);
     }
 }

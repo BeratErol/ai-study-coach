@@ -1,17 +1,12 @@
 import { useOnboardingStore } from '../../../stores/onboardingStore'
+import StepHeader from './StepHeader'
 
 export default function Step1NameGender() {
   const { name, gender, updateName, updateGender } = useOnboardingStore()
 
   return (
-    <div className="w-full">
-      <div className="mb-10">
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-6xl">👤</span>
-          <h2 className="text-4xl font-bold text-gray-900 leading-tight">Seni Tanıyalım</h2>
-        </div>
-        <p className="text-lg text-gray-500 mt-3">Koçun sana özel bir deneyim sunacak</p>
-      </div>
+    <div className="w-full max-w-2xl mx-auto">
+      <StepHeader emoji="👤" title="Seni Tanıyalım" subtitle="Koçun sana özel bir deneyim sunacak" />
 
       <label className="block text-lg font-semibold text-gray-700 mb-3">İsmin</label>
       <input

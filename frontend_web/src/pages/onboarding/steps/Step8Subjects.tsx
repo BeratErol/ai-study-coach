@@ -1,5 +1,6 @@
 import { useOnboardingStore } from '../../../stores/onboardingStore'
 import { getSubjectsForExam, type SubjectData } from '../../../data/subjectsData'
+import StepHeader from './StepHeader'
 
 function GroupLabel({ label, colorClass }: { label: string; colorClass: string }) {
   return (
@@ -110,14 +111,8 @@ export default function Step8Subjects() {
   }
 
   return (
-    <div className="w-full">
-      <div className="mb-10">
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-6xl">📚</span>
-          <h2 className="text-4xl font-bold text-gray-900 leading-tight">Derslerini Belirle</h2>
-        </div>
-        <p className="text-lg text-gray-500 mt-3">Güçlü ve zayıf derslerini seç</p>
-      </div>
+    <div className="w-full max-w-4xl mx-auto">
+      <StepHeader emoji="📚" title="Derslerini Belirle" subtitle="Güçlü ve zayıf derslerini seç" />
 
       {/* Güçlü dersler */}
       <div className="bg-green-50 border-2 border-green-200 rounded-3xl p-6 mb-6">

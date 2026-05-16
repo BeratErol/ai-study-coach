@@ -119,7 +119,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection(); // Fiziksel cihaz HTTP erişimi için devre dışı
 
 app.UseAuthentication();
 app.UseAuthorization();

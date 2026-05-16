@@ -25,13 +25,63 @@ final onboardingDataProvider = FutureProvider<OnboardingData?>((ref) async {
 
 // ── Haftalık plan ──────────────────────────────────────────────────────────
 
+String _weeklyPlanKey(String userId) => 'weekly_plan_$userId';
+
+/// Kaydedilmiş planı sil ve studyPlanProvider'ı yeniden oluşturmaya zorla.
+Future<void> resetStudyPlan(WidgetRef ref, String userId) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove(_weeklyPlanKey(userId));
+  ref.invalidate(studyPlanProvider);
+}
+
 final studyPlanProvider = FutureProvider<List<StudyDay>>((ref) async {
   final userId = await TokenService.getUserId();
-  if (userId == null) { return []; }
+  if (userId == null) return [];
   final dataMap = await UserPrefsService.getOnboardingData(userId);
-  if (dataMap == null) { return []; }
+  if (dataMap == null) return [];
   final data = OnboardingData.fromJson(dataMap);
-  return StudyPlanGenerator.generateWeeklyPlan(data);
+
+  final prefs = await SharedPreferences.getInstance();
+  final key = _weeklyPlanKey(userId);
+  final today = DateTime.now();
+  final todayDate = DateTime(today.year, today.month, today.day);
+
+  // Kaydedilmiş plan var mı?
+  final raw = prefs.getString(key);
+  if (raw != null) {
+    try {
+      final list = jsonDecode(raw) as List;
+      final stored = list
+          .map((e) => StudyDay.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      if (stored.isNotEmpty) {
+        final startDate = DateTime(
+          stored.first.date.year,
+          stored.first.date.month,
+          stored.first.date.day,
+        );
+        final endDate = startDate.add(const Duration(days: 6));
+
+        if (!todayDate.isAfter(endDate)) {
+          // Plan hâlâ geçerli: bugün ve sonrasındaki günleri döndür
+          return stored
+              .where((d) => !d.date
+                  .isBefore(todayDate))
+              .toList();
+        }
+        // Plan süresi dolmuş: yeni plan üret ve kaydet
+      }
+    } catch (_) {
+      // Bozuk JSON: yeni plan üret
+    }
+  }
+
+  // Yeni plan üret ve kaydet
+  final plan = StudyPlanGenerator.generateWeeklyPlan(data);
+  await prefs.setString(
+      key, jsonEncode(plan.map((d) => d.toJson()).toList()));
+  return plan;
 });
 
 // ── Sınav geri sayımı ──────────────────────────────────────────────────────
@@ -39,6 +89,13 @@ final studyPlanProvider = FutureProvider<List<StudyDay>>((ref) async {
 final examCountdownProvider = FutureProvider<int?>((ref) async {
   final userId = await TokenService.getUserId();
   if (userId == null) return null;
+
+  // Kullanıcının kaydettiği sınav tarihi öncelikli
+  final savedDate = await UserPrefsService.getExamDate(userId);
+  if (savedDate != null) {
+    final diff = savedDate.difference(DateTime.now()).inDays;
+    return diff > 0 ? diff : null;
+  }
 
   // Backend'den taze veri dene
   try {
@@ -65,6 +122,14 @@ final examCountdownProvider = FutureProvider<int?>((ref) async {
   if (examDate == null) return null;
   final diff = examDate.difference(DateTime.now()).inDays;
   return diff > 0 ? diff : null;
+});
+
+// ── Sınav hedefi ───────────────────────────────────────────────────────────
+
+final examGoalProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final userId = await TokenService.getUserId();
+  if (userId == null) return {};
+  return UserPrefsService.getExamGoal(userId);
 });
 
 // ── Manuel görevler ────────────────────────────────────────────────────────
@@ -104,6 +169,16 @@ class ManualTasksNotifier extends StateNotifier<List<StudyTask>> {
     state = state.where((t) => t.id != id).toList();
     _save();
   }
+
+  void clearForDate(DateTime date) {
+    state = state
+        .where((t) =>
+            !(t.date.year == date.year &&
+              t.date.month == date.month &&
+              t.date.day == date.day))
+        .toList();
+    _save();
+  }
 }
 
 final manualTasksProvider =
@@ -135,14 +210,103 @@ final todayTasksProvider = FutureProvider<List<StudyTask>>((ref) async {
   return all;
 });
 
-// ── Tamamlanan görev id'leri ───────────────────────────────────────────────
+// ── Tamamlanan görev id'leri (kalıcı: userId + tarih bazlı) ───────────────
 
-final completedTaskIdsProvider = StateProvider<Set<String>>((ref) => {});
+class CompletedTasksNotifier extends StateNotifier<Set<String>> {
+  CompletedTasksNotifier() : super({}) {
+    _load();
+  }
 
-// ── Konu atamaları (ders adı → konu adı) ──────────────────────────────────
+  static Future<String?> _key() async {
+    final userId = await TokenService.getUserId();
+    if (userId == null) return null;
+    final d = DateTime.now();
+    final date =
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    return 'completed_tasks_${userId}_$date';
+  }
+
+  Future<void> _load() async {
+    final key = await _key();
+    if (key == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(key);
+    if (raw != null) state = raw.toSet();
+  }
+
+  Future<void> _save() async {
+    final key = await _key();
+    if (key == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(key, state.toList());
+  }
+
+  void mark(String id) {
+    state = {...state, id};
+    _save();
+  }
+
+  void unmark(String id) {
+    state = {...state}..remove(id);
+    _save();
+  }
+
+  void markAll(Set<String> ids) {
+    state = ids;
+    _save();
+  }
+}
+
+final completedTaskIdsProvider =
+    StateNotifierProvider<CompletedTasksNotifier, Set<String>>(
+  (ref) => CompletedTasksNotifier(),
+);
+
+// ── Dinlenme günü sayacı (local, today filter için) ────────────────────────
+
+final restDaysProvider = StateProvider<int>((ref) => 0);
+
+// ── Konu atamaları (blockId → konu adı) — kalıcı ─────────────────────────
+
+class TopicAssignmentsNotifier extends StateNotifier<Map<String, String>> {
+  TopicAssignmentsNotifier() : super({}) {
+    _load();
+  }
+
+  static Future<String> _key() async {
+    final userId = await TokenService.getUserId() ?? 'anonymous';
+    return 'topic_assignments_$userId';
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(await _key());
+    if (raw != null) {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      state = map.cast<String, String>();
+    }
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(await _key(), jsonEncode(state));
+  }
+
+  void assign(String blockId, String topic) {
+    state = {...state, blockId: topic};
+    _save();
+  }
+
+  void remove(String blockId) {
+    state = {...state}..remove(blockId);
+    _save();
+  }
+}
 
 final topicAssignmentsProvider =
-    StateProvider<Map<String, String>>((ref) => {});
+    StateNotifierProvider<TopicAssignmentsNotifier, Map<String, String>>(
+  (ref) => TopicAssignmentsNotifier(),
+);
 
 // ── Hızlı notlar ──────────────────────────────────────────────────────────
 
@@ -151,9 +315,14 @@ class QuickNotesNotifier extends StateNotifier<List<QuickNote>> {
     _load();
   }
 
+  static Future<String> _key() async {
+    final userId = await TokenService.getUserId() ?? 'anonymous';
+    return 'quick_notes_$userId';
+  }
+
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('quick_notes');
+    final raw = prefs.getString(await _key());
     if (raw != null) {
       final list = jsonDecode(raw) as List;
       state = list
@@ -166,14 +335,14 @@ class QuickNotesNotifier extends StateNotifier<List<QuickNote>> {
     state = [note, ...state];
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        'quick_notes', jsonEncode(state.map((n) => n.toJson()).toList()));
+        await _key(), jsonEncode(state.map((n) => n.toJson()).toList()));
   }
 
   Future<void> removeNote(String id) async {
     state = state.where((n) => n.id != id).toList();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        'quick_notes', jsonEncode(state.map((n) => n.toJson()).toList()));
+        await _key(), jsonEncode(state.map((n) => n.toJson()).toList()));
   }
 }
 

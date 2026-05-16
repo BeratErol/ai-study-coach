@@ -1,20 +1,25 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
+import '../providers/chatbot_provider.dart';
+import '../providers/gelisimim_provider.dart';
+import '../providers/study_plan_provider.dart';
+import '../screens/denemeler_screen.dart';
 import '../services/api_service.dart';
 import '../services/token_service.dart';
 import '../services/user_prefs_service.dart';
 import '../core/app_theme.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey    = GlobalKey<FormState>();
   final _emailCtrl  = TextEditingController();
   final _passCtrl   = TextEditingController();
@@ -57,6 +62,23 @@ class _LoginScreenState extends State<LoginScreen> {
           await const FlutterSecureStorage()
               .write(key: 'jwt_token', value: token);
         }
+        // Reset user-specific local providers so new user sees clean state
+        ref.invalidate(completedTaskIdsProvider);
+        ref.invalidate(manualTasksProvider);
+        ref.invalidate(onboardingDataProvider);
+        ref.invalidate(studyPlanProvider);
+        ref.invalidate(examGoalProvider);
+        ref.invalidate(examCountdownProvider);
+        ref.invalidate(quickNotesProvider);
+        ref.invalidate(examsProvider);
+        ref.invalidate(xpInfoProvider);
+        ref.invalidate(gelisimimStatsProvider('all'));
+        ref.invalidate(gelisimimStatsProvider('today'));
+        ref.invalidate(lessonDistributionProvider('all'));
+        ref.invalidate(questionSubjectsProvider);
+        ref.invalidate(topicAssignmentsProvider);
+        ref.invalidate(chatbotProvider);
+        ref.read(restDaysProvider.notifier).state = 0;
         if (!mounted) return;
         await _checkOnboardingStatus();
       }
@@ -77,24 +99,37 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _checkOnboardingStatus() async {
     final userId = await TokenService.getUserId() ?? '';
+
+    // Backend'den profil kontrolü
+    bool? profileExists;
     try {
       final response = await ApiService().dio.get('/UserProfile');
       if (response.statusCode == 200 && response.data != null) {
-        await UserPrefsService.setOnboardingCompleted(userId, true);
-        if (mounted) context.go('/dashboard');
-        return;
+        profileExists = true;
       }
-    } catch (e) {
-      if (e is DioException && e.response?.statusCode == 404) {
-        // Sunucuda profil yok — local kaydı esas al (POST başarısız olmuş olabilir)
-        final completed = await UserPrefsService.isOnboardingCompleted(userId);
-        if (mounted) context.go(completed ? '/dashboard' : '/onboarding');
-        return;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        profileExists = false; // Açıkça profil yok → onboarding
       }
-      // Diğer ağ hataları → local'e dön
+      // Diğer tüm DioException (bağlantı hatası, timeout, 500 vb.) → profileExists = null
+    } catch (_) {
+      // Beklenmedik hata → profileExists = null
     }
-    final completed = await UserPrefsService.isOnboardingCompleted(userId);
-    if (mounted) context.go(completed ? '/dashboard' : '/onboarding');
+
+    if (profileExists == true) {
+      // Profil var, onboarding tamamlandı
+      await UserPrefsService.setOnboardingCompleted(userId, true);
+      if (mounted) context.go('/dashboard');
+    } else if (profileExists == false) {
+      // Açıkça 404 → profil yok, local'e bak
+      final completed = await UserPrefsService.isOnboardingCompleted(userId);
+      if (mounted) context.go(completed ? '/dashboard' : '/onboarding');
+    } else {
+      // Ağ/sunucu hatası → local'e bak; local'de de yoksa dashboard'a gönder
+      // (giriş başarılıysa kullanıcı zaten kayıtlı, onboarding'e atmak yanlış)
+      final completed = await UserPrefsService.isOnboardingCompleted(userId);
+      if (mounted) context.go(completed ? '/dashboard' : '/dashboard');
+    }
   }
 
   void _showSuccessSnack(String msg) {

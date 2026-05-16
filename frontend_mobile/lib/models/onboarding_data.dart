@@ -18,6 +18,8 @@ class OnboardingData {
   List<int> offDays;
   List<String> strongSubjects;
   List<String> weakSubjects;
+  // Kullanıcının kendi eklediği özel dersler (Okul Sınavlarım / Üniversite)
+  List<String> customSubjects;
 
   OnboardingData({
     this.name = '',
@@ -39,9 +41,11 @@ class OnboardingData {
     List<int>? offDays,
     List<String>? strongSubjects,
     List<String>? weakSubjects,
+    List<String>? customSubjects,
   })  : offDays = offDays ?? [],
         strongSubjects = strongSubjects ?? [],
-        weakSubjects = weakSubjects ?? [];
+        weakSubjects = weakSubjects ?? [],
+        customSubjects = customSubjects ?? [];
 
   OnboardingData copyWith({
     String? name,
@@ -64,6 +68,7 @@ class OnboardingData {
     List<int>? offDays,
     List<String>? strongSubjects,
     List<String>? weakSubjects,
+    List<String>? customSubjects,
   }) {
     return OnboardingData(
       name: name ?? this.name,
@@ -85,6 +90,7 @@ class OnboardingData {
       offDays: offDays ?? List<int>.from(this.offDays),
       strongSubjects: strongSubjects ?? List<String>.from(this.strongSubjects),
       weakSubjects: weakSubjects ?? List<String>.from(this.weakSubjects),
+      customSubjects: customSubjects ?? List<String>.from(this.customSubjects),
     );
   }
 
@@ -119,6 +125,10 @@ class OnboardingData {
                 ?.map((e) => e as String)
                 .toList() ??
             [],
+        customSubjects: (json['customSubjects'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            [],
       );
 
   Map<String, dynamic> toJson() => {
@@ -141,5 +151,6 @@ class OnboardingData {
         'offDays': offDays,
         'strongSubjects': strongSubjects,
         'weakSubjects': weakSubjects,
+        'customSubjects': customSubjects,
       };
 }

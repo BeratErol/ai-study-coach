@@ -1,4 +1,5 @@
 import { useOnboardingStore } from '../../../stores/onboardingStore'
+import StepHeader from './StepHeader'
 
 const options = [
   { emoji: '🏫', title: 'Ortaokul', subtitle: '5, 6, 7 veya 8. sınıf', value: 'ortaokul' },
@@ -19,14 +20,8 @@ export default function Step2Education() {
   }
 
   return (
-    <div className="w-full">
-      <div className="mb-10">
-        <div className="flex items-center gap-4 mb-4">
-          <span className="text-6xl">🎓</span>
-          <h2 className="text-4xl font-bold text-gray-900 leading-tight">Eğitim Kademesi</h2>
-        </div>
-        <p className="text-lg text-gray-500 mt-3">Hangi kademedesin?</p>
-      </div>
+    <div className="w-full max-w-3xl mx-auto">
+      <StepHeader emoji="🎓" title="Eğitim Kademesi" subtitle="Hangi kademedesin?" />
 
       <div className="space-y-4">
         {options.map((opt) => (

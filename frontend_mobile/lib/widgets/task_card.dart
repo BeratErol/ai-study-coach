@@ -7,8 +7,9 @@ import '../providers/study_plan_provider.dart';
 class TaskCard extends ConsumerWidget {
   final StudyTask task;
   final bool isLocked;
+  final bool readOnly;
 
-  const TaskCard({super.key, required this.task, this.isLocked = false});
+  const TaskCard({super.key, required this.task, this.isLocked = false, this.readOnly = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -18,9 +19,24 @@ class TaskCard extends ConsumerWidget {
     final isMola = task.isMola;
     final topicName = task.topicName ?? topicMap[task.id];
 
+    final cardBg = isLocked
+        ? Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+        : isMola
+            ? const Color(0xFF10B981).withValues(alpha: 0.08)
+            : Theme.of(context).cardColor;
+    final borderColor = isCompleted
+        ? Colors.green.shade200
+        : isLocked
+            ? Theme.of(context).dividerColor
+            : isMola
+                ? Colors.green.shade100
+                : Theme.of(context).dividerColor;
+    final textColor = Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87;
+    final subTextColor = Theme.of(context).textTheme.bodySmall?.color ?? Colors.grey;
+
     return GestureDetector(
       onTap: () {
-        if (isMola) return;
+        if (readOnly || isMola) return;
         if (isLocked) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -42,26 +58,14 @@ class TaskCard extends ConsumerWidget {
           );
           return;
         }
-        _showStartTaskDialog(context, task.copyWith(topicName: topicName));
+        _showStartTaskDialog(context, ref, task.copyWith(topicName: topicName));
       },
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isLocked
-              ? Colors.grey.shade50
-              : isMola
-                  ? const Color(0xFFF0FDF4)
-                  : Colors.white,
+          color: cardBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isCompleted
-                ? Colors.green.shade200
-                : isLocked
-                    ? Colors.grey.shade200
-                    : isMola
-                        ? Colors.green.shade100
-                        : Colors.grey.shade100,
-          ),
+          border: Border.all(color: borderColor),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.04),
@@ -79,8 +83,7 @@ class TaskCard extends ConsumerWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color:
-                      _subjectColor(task.subjectName).withValues(alpha: 0.12),
+                  color: _subjectColor(task.subjectName).withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -108,10 +111,10 @@ class TaskCard extends ConsumerWidget {
                             ? TextDecoration.lineThrough
                             : null,
                         color: isCompleted
-                            ? Colors.grey
+                            ? subTextColor
                             : isLocked
-                                ? Colors.grey.shade500
-                                : Colors.black87,
+                                ? subTextColor
+                                : textColor,
                       ),
                     ),
                     if (topicName != null && !isMola) ...[
@@ -130,19 +133,17 @@ class TaskCard extends ConsumerWidget {
                               ? Icons.coffee_outlined
                               : Icons.menu_book_outlined,
                           size: 13,
-                          color: Colors.grey.shade500,
+                          color: subTextColor,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           '${task.startTime} – ${task.endTime}',
-                          style: TextStyle(
-                              fontSize: 13, color: Colors.grey.shade500),
+                          style: TextStyle(fontSize: 13, color: subTextColor),
                         ),
                         const SizedBox(width: 8),
                         Text(
                           '${task.durationMinutes} dk',
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.grey.shade400),
+                          style: TextStyle(fontSize: 12, color: subTextColor),
                         ),
                       ],
                     ),
@@ -152,18 +153,15 @@ class TaskCard extends ConsumerWidget {
             ),
             // Lock icon or checkbox
             if (isLocked)
-              Icon(Icons.lock_outline,
-                  size: 20, color: Colors.grey.shade400)
+              Icon(Icons.lock_outline, size: 20, color: subTextColor)
             else
               GestureDetector(
                 onTap: () {
-                  final notifier =
-                      ref.read(completedTaskIdsProvider.notifier);
-                  final current = ref.read(completedTaskIdsProvider);
+                  final notifier = ref.read(completedTaskIdsProvider.notifier);
                   if (isCompleted) {
-                    notifier.state = {...current}..remove(task.id);
+                    notifier.unmark(task.id);
                   } else {
-                    notifier.state = {...current, task.id};
+                    notifier.mark(task.id);
                   }
                 },
                 child: Container(
@@ -173,9 +171,7 @@ class TaskCard extends ConsumerWidget {
                     shape: BoxShape.circle,
                     color: isCompleted ? Colors.green : Colors.transparent,
                     border: Border.all(
-                      color: isCompleted
-                          ? Colors.green
-                          : Colors.grey.shade300,
+                      color: isCompleted ? Colors.green : subTextColor.withValues(alpha: 0.4),
                       width: 2,
                     ),
                   ),
@@ -190,8 +186,13 @@ class TaskCard extends ConsumerWidget {
     );
   }
 
-  void _showStartTaskDialog(BuildContext context, StudyTask task) {
+  void _showStartTaskDialog(BuildContext context, WidgetRef ref, StudyTask task) {
     final router = GoRouter.of(context);
+    final isManual = !task.id.startsWith('s_') &&
+        !task.id.startsWith('w_') &&
+        !task.id.startsWith('m_');
+    final completedIds = ref.read(completedTaskIdsProvider);
+    final isCompleted = completedIds.contains(task.id);
 
     showDialog(
       context: context,
@@ -206,8 +207,10 @@ class TaskCard extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(
                   vertical: 12, horizontal: 16),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF4338CA), Color(0xFF6D28D9)]),
+                gradient: LinearGradient(
+                  colors: isCompleted
+                      ? [const Color(0xFF059669), const Color(0xFF10B981)]
+                      : [const Color(0xFF4338CA), const Color(0xFF6D28D9)]),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(children: [
@@ -223,12 +226,16 @@ class TaskCard extends ConsumerWidget {
                         fontSize: 16),
                   ),
                 ),
-                Text('${task.durationMinutes} dk',
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 13)),
+                if (isCompleted)
+                  const Icon(Icons.check_circle, color: Colors.white, size: 18)
+                else
+                  Text('${task.durationMinutes} dk',
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 13)),
               ]),
             ),
             const SizedBox(height: 16),
+            // Tekrar çalış butonu — her zaman göster
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -238,12 +245,18 @@ class TaskCard extends ConsumerWidget {
                     router.push('/study-session', extra: task);
                   });
                 },
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: const Text('Dersi Başlat',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w700)),
+                icon: Icon(isCompleted
+                    ? Icons.replay_rounded
+                    : Icons.play_arrow_rounded),
+                label: Text(
+                  isCompleted ? 'Tekrar Çalış' : 'Dersi Başlat',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700),
+                ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4F46E5),
+                  backgroundColor: isCompleted
+                      ? const Color(0xFF059669)
+                      : const Color(0xFF4F46E5),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
@@ -252,9 +265,37 @@ class TaskCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 8),
+            // Tamamlamayı kaldır — sadece tamamlanmış görevlerde
+            if (isCompleted)
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(dialogCtx).pop();
+                    ref.read(completedTaskIdsProvider.notifier).unmark(task.id);
+                  },
+                  icon: const Icon(Icons.remove_circle_outline,
+                      color: Colors.orange),
+                  label: const Text('Tamamlamayı Kaldır',
+                      style: TextStyle(color: Colors.orange)),
+                ),
+              ),
+            if (isManual && !isCompleted)
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(dialogCtx).pop();
+                    ref.read(manualTasksProvider.notifier).remove(task.id);
+                  },
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  label: const Text('Görevi Kaldır',
+                      style: TextStyle(color: Colors.red)),
+                ),
+              ),
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text('Vazgeç',
+              child: const Text('Kapat',
                   style: TextStyle(color: Colors.grey))),
           ]),
         ),
