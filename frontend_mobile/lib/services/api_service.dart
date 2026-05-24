@@ -6,9 +6,13 @@ import '../core/global_navigator.dart';
 import '../utils/constants.dart';
 
 class ApiService {
+  // Singleton — her çağrıda yeni Dio + interceptor kurmamak için.
+  static final ApiService _instance = ApiService._internal();
+  factory ApiService() => _instance;
+
   late final Dio _dio;
 
-  ApiService() {
+  ApiService._internal() {
     _dio = Dio(BaseOptions(
       baseUrl: ApiConstants.baseUrl,
       connectTimeout: const Duration(seconds: 15),

@@ -125,38 +125,194 @@ export function getSubjectsForExam(targetExam: string, selectedArea: string): Su
         { name: 'Mevzuat', emoji: '📜', group: 'default' },
         { name: 'ÖABT (Alan Bilgisi)', emoji: '👩‍🏫', group: 'default' },
       ]
-    case 'DGS':
-      return [
-        { name: 'DGS Türkçe', emoji: '📖', group: 'default' },
-        { name: 'DGS Matematik', emoji: '📐', group: 'default' },
-        { name: 'DGS Sayısal Mantık', emoji: '🧩', group: 'default' },
-        { name: 'DGS Sözel Mantık', emoji: '💭', group: 'default' },
-      ]
-    case 'TUS':
-      return [
-        { name: 'Anatomi', emoji: '🦴', group: 'default' },
-        { name: 'Fizyoloji', emoji: '💓', group: 'default' },
-        { name: 'Biyokimya', emoji: '🧪', group: 'default' },
-        { name: 'Histoloji ve Embriyoloji', emoji: '🔬', group: 'default' },
-        { name: 'Mikrobiyoloji', emoji: '🦠', group: 'default' },
-        { name: 'Patoloji', emoji: '🧬', group: 'default' },
-        { name: 'Farmakoloji', emoji: '💊', group: 'default' },
-        { name: 'Dahiliye (İç Hastalıkları)', emoji: '🏥', group: 'default' },
-        { name: 'Cerrahi', emoji: '🔪', group: 'default' },
-        { name: 'Pediatri (Çocuk Hastalıkları)', emoji: '👶', group: 'default' },
-        { name: 'Kadın Hastalıkları ve Doğum', emoji: '🤱', group: 'default' },
-        { name: 'Psikiyatri', emoji: '🧠', group: 'default' },
-        { name: 'Halk Sağlığı', emoji: '🌍', group: 'default' },
-      ]
-    case 'Bursluluk':
-      return [
-        { name: 'Matematik', emoji: '📐', group: 'default' },
-        { name: 'Türkçe', emoji: '📖', group: 'default' },
-        { name: 'Fen Bilimleri', emoji: '🔬', group: 'default' },
-        { name: 'Sosyal Bilgiler', emoji: '🌍', group: 'default' },
-        { name: 'Din Kültürü', emoji: '🕌', group: 'default' },
-      ]
+    case 'OkulSinavi':
+      return getOkulSinaviSubjects(selectedArea)
     default:
       return [...tytSubjects]
+  }
+}
+
+// ── OkulSinavi ders havuzu (mobil ile birebir) ───────────────────────────────
+// selectedArea kodlaması:
+//  ortaokul: 'sinif_5' | 'sinif_6' | 'sinif_7' | 'sinif_8'
+//  lise 9-10: 'lise_9' | 'lise_10'
+//  lise 11-12 + alan: 'lise_1112_sayisal' | 'lise_1112_ea' | 'lise_1112_sozel' | 'lise_1112_dil'
+//  universite bölüm: 'uni_yazilim' | 'uni_tip' | 'uni_hukuk' | 'uni_psikoloji' |
+//                    'uni_isletme' | 'uni_muhendislik' | 'uni_egitim' | 'uni_diger'
+export function getOkulSinaviSubjects(selectedArea: string): SubjectData[] {
+  switch (selectedArea) {
+    case 'sinif_5':
+    case 'sinif_6':
+    case 'sinif_7':
+      return [
+        { name: 'Türkçe', emoji: '📖', group: 'default' },
+        { name: 'Matematik', emoji: '📐', group: 'default' },
+        { name: 'Fen Bilimleri', emoji: '🔬', group: 'default' },
+        { name: 'Sosyal Bilgiler', emoji: '🌍', group: 'default' },
+        { name: 'İngilizce', emoji: '🇬🇧', group: 'default' },
+        { name: 'Din Kültürü ve Ahlak Bilgisi', emoji: '🕌', group: 'default' },
+      ]
+    case 'sinif_8':
+      return [
+        { name: 'Türkçe', emoji: '📖', group: 'default' },
+        { name: 'Matematik', emoji: '📐', group: 'default' },
+        { name: 'Fen Bilimleri', emoji: '🔬', group: 'default' },
+        { name: 'İnkılap Tarihi ve Atatürkçülük', emoji: '🏛️', group: 'default' },
+        { name: 'İngilizce', emoji: '🇬🇧', group: 'default' },
+        { name: 'Din Kültürü ve Ahlak Bilgisi', emoji: '🕌', group: 'default' },
+      ]
+    case 'lise_9':
+      return [
+        { name: 'Matematik', emoji: '📐', group: 'default' },
+        { name: 'Fizik', emoji: '⚡', group: 'default' },
+        { name: 'Kimya', emoji: '🧪', group: 'default' },
+        { name: 'Biyoloji', emoji: '🧬', group: 'default' },
+        { name: 'Tarih', emoji: '🏛️', group: 'default' },
+        { name: 'Türk Dili ve Edebiyatı', emoji: '📖', group: 'default' },
+        { name: 'Coğrafya', emoji: '🌍', group: 'default' },
+        { name: 'Din Kültürü ve Ahlak Bilgisi', emoji: '🕌', group: 'default' },
+        { name: 'İngilizce', emoji: '🇬🇧', group: 'default' },
+        { name: 'Almanca', emoji: '🇩🇪', group: 'default' },
+      ]
+    case 'lise_10':
+      return [
+        { name: 'Matematik', emoji: '📐', group: 'default' },
+        { name: 'Fizik', emoji: '⚡', group: 'default' },
+        { name: 'Kimya', emoji: '🧪', group: 'default' },
+        { name: 'Biyoloji', emoji: '🧬', group: 'default' },
+        { name: 'Tarih', emoji: '🏛️', group: 'default' },
+        { name: 'Türk Dili ve Edebiyatı', emoji: '📖', group: 'default' },
+        { name: 'Coğrafya', emoji: '🌍', group: 'default' },
+        { name: 'Din Kültürü ve Ahlak Bilgisi', emoji: '🕌', group: 'default' },
+        { name: 'İngilizce', emoji: '🇬🇧', group: 'default' },
+        { name: 'Almanca', emoji: '🇩🇪', group: 'default' },
+        { name: 'Felsefe', emoji: '💭', group: 'default' },
+      ]
+    case 'lise_1112_sayisal':
+      return [
+        { name: 'Türk Dili ve Edebiyatı', emoji: '📖', group: 'default' },
+        { name: 'Din Kültürü ve Ahlak Bilgisi', emoji: '🕌', group: 'default' },
+        { name: 'Tarih', emoji: '🏛️', group: 'default' },
+        { name: 'Felsefe', emoji: '💭', group: 'default' },
+        { name: 'İngilizce', emoji: '🇬🇧', group: 'default' },
+        { name: 'İkinci Yabancı Dil', emoji: '🌐', group: 'default' },
+        { name: 'Seçmeli Matematik', emoji: '📐', group: 'default' },
+        { name: 'Seçmeli Fizik', emoji: '⚡', group: 'default' },
+        { name: 'Seçmeli Kimya', emoji: '🧪', group: 'default' },
+        { name: 'Seçmeli Biyoloji', emoji: '🧬', group: 'default' },
+      ]
+    case 'lise_1112_ea':
+      return [
+        { name: 'Türk Dili ve Edebiyatı', emoji: '📖', group: 'default' },
+        { name: 'Din Kültürü ve Ahlak Bilgisi', emoji: '🕌', group: 'default' },
+        { name: 'Tarih', emoji: '🏛️', group: 'default' },
+        { name: 'Felsefe', emoji: '💭', group: 'default' },
+        { name: 'İngilizce', emoji: '🇬🇧', group: 'default' },
+        { name: 'İkinci Yabancı Dil', emoji: '🌐', group: 'default' },
+        { name: 'Seçmeli Matematik', emoji: '📐', group: 'default' },
+        { name: 'Seçmeli Türk Dili ve Edebiyatı', emoji: '✏️', group: 'default' },
+        { name: 'Seçmeli Coğrafya', emoji: '🌍', group: 'default' },
+        { name: 'Seçmeli Tarih / Medeniyet Tarihi', emoji: '🏺', group: 'default' },
+      ]
+    case 'lise_1112_sozel':
+      return [
+        { name: 'Türk Dili ve Edebiyatı', emoji: '📖', group: 'default' },
+        { name: 'Din Kültürü ve Ahlak Bilgisi', emoji: '🕌', group: 'default' },
+        { name: 'Tarih', emoji: '🏛️', group: 'default' },
+        { name: 'Felsefe', emoji: '💭', group: 'default' },
+        { name: 'İngilizce', emoji: '🇬🇧', group: 'default' },
+        { name: 'İkinci Yabancı Dil', emoji: '🌐', group: 'default' },
+        { name: 'Seçmeli Türk Dili ve Edebiyatı', emoji: '✏️', group: 'default' },
+        { name: 'Türk Kültür ve Medeniyet Tarihi', emoji: '🏺', group: 'default' },
+        { name: 'Seçmeli Coğrafya', emoji: '🌍', group: 'default' },
+        { name: 'Psikoloji/Sosyoloji/Mantık', emoji: '🧠', group: 'default' },
+      ]
+    case 'lise_1112_dil':
+      return [
+        { name: 'Türk Dili ve Edebiyatı', emoji: '📖', group: 'default' },
+        { name: 'Din Kültürü ve Ahlak Bilgisi', emoji: '🕌', group: 'default' },
+        { name: 'Tarih', emoji: '🏛️', group: 'default' },
+        { name: 'Felsefe', emoji: '💭', group: 'default' },
+        { name: 'Matematik', emoji: '📐', group: 'default' },
+        { name: 'İngilizce', emoji: '🇬🇧', group: 'default' },
+        { name: 'İngilizce Edebiyatı', emoji: '📚', group: 'default' },
+        { name: 'Almanca', emoji: '🇩🇪', group: 'default' },
+      ]
+    case 'uni_yazilim':
+      return [
+        { name: 'Algoritma ve Programlama', emoji: '💻', group: 'default' },
+        { name: 'Veri Yapıları', emoji: '🗂️', group: 'default' },
+        { name: 'Diferansiyel ve İntegral', emoji: '📐', group: 'default' },
+        { name: 'Lineer Cebir', emoji: '🔢', group: 'default' },
+        { name: 'Olasılık ve İstatistik', emoji: '📊', group: 'default' },
+        { name: 'Veritabanı Sistemleri', emoji: '🛢️', group: 'default' },
+        { name: 'Bilgisayar Ağları', emoji: '🌐', group: 'default' },
+        { name: 'İşletim Sistemleri', emoji: '🖥️', group: 'default' },
+        { name: 'Yazılım Mühendisliği', emoji: '⚙️', group: 'default' },
+      ]
+    case 'uni_tip':
+      return [
+        { name: 'Anatomi', emoji: '🦴', group: 'default' },
+        { name: 'Fizyoloji', emoji: '🫀', group: 'default' },
+        { name: 'Biyokimya', emoji: '🧪', group: 'default' },
+        { name: 'Histoloji', emoji: '🔬', group: 'default' },
+        { name: 'Mikrobiyoloji', emoji: '🦠', group: 'default' },
+        { name: 'Farmakoloji', emoji: '💊', group: 'default' },
+        { name: 'Patoloji', emoji: '🏥', group: 'default' },
+        { name: 'Dahiliye', emoji: '👨‍⚕️', group: 'default' },
+      ]
+    case 'uni_hukuk':
+      return [
+        { name: 'Medeni Hukuk', emoji: '⚖️', group: 'default' },
+        { name: 'Borçlar Hukuku', emoji: '📜', group: 'default' },
+        { name: 'Ticaret Hukuku', emoji: '🏢', group: 'default' },
+        { name: 'Ceza Hukuku', emoji: '🔒', group: 'default' },
+        { name: 'İdare Hukuku', emoji: '🏛️', group: 'default' },
+        { name: 'Anayasa Hukuku', emoji: '📋', group: 'default' },
+        { name: 'Uluslararası Hukuk', emoji: '🌍', group: 'default' },
+      ]
+    case 'uni_psikoloji':
+      return [
+        { name: 'Genel Psikoloji', emoji: '🧠', group: 'default' },
+        { name: 'Gelişim Psikolojisi', emoji: '🌱', group: 'default' },
+        { name: 'Sosyal Psikoloji', emoji: '👥', group: 'default' },
+        { name: 'Klinik Psikoloji', emoji: '💆', group: 'default' },
+        { name: 'Psikolojik Testler', emoji: '📝', group: 'default' },
+        { name: 'Nöropsikoloji', emoji: '🔬', group: 'default' },
+        { name: 'İstatistik', emoji: '📊', group: 'default' },
+      ]
+    case 'uni_isletme':
+      return [
+        { name: 'Muhasebe', emoji: '📒', group: 'default' },
+        { name: 'Finans', emoji: '💰', group: 'default' },
+        { name: 'Pazarlama', emoji: '📈', group: 'default' },
+        { name: 'Yönetim ve Organizasyon', emoji: '🏢', group: 'default' },
+        { name: 'İşletme İktisadı', emoji: '📊', group: 'default' },
+        { name: 'Ticaret Hukuku', emoji: '⚖️', group: 'default' },
+        { name: 'İstatistik', emoji: '🔢', group: 'default' },
+      ]
+    case 'uni_muhendislik':
+      return [
+        { name: 'Diferansiyel Denklemler', emoji: '📐', group: 'default' },
+        { name: 'Lineer Cebir', emoji: '🔢', group: 'default' },
+        { name: 'Fizik I - II', emoji: '⚡', group: 'default' },
+        { name: 'Kimya', emoji: '🧪', group: 'default' },
+        { name: 'Termodinamik', emoji: '🌡️', group: 'default' },
+        { name: 'Mekanik', emoji: '⚙️', group: 'default' },
+        { name: 'Malzeme Bilimi', emoji: '🏗️', group: 'default' },
+      ]
+    case 'uni_egitim':
+      return [
+        { name: 'Eğitim Psikolojisi', emoji: '🧠', group: 'default' },
+        { name: 'Öğretim İlke ve Yöntemleri', emoji: '📚', group: 'default' },
+        { name: 'Sınıf Yönetimi', emoji: '🏫', group: 'default' },
+        { name: 'Ölçme ve Değerlendirme', emoji: '📊', group: 'default' },
+        { name: 'Alan Bilgisi', emoji: '🎓', group: 'default' },
+        { name: 'Özel Öğretim Yöntemleri', emoji: '✏️', group: 'default' },
+      ]
+    case 'uni_diger':
+      return [] // kullanıcı tanımlı
+    default:
+      return []
   }
 }

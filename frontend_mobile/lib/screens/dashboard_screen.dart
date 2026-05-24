@@ -313,7 +313,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ref
                 .read(completedTaskIdsProvider.notifier)
                 .markAll(tasks.map((t) => t.id).toSet());
-            ref.read(restDaysProvider.notifier).state++;
+            // Bugünü dinlenme günü olarak kaydet (kalıcı + senkron)
+            ref.read(restDaysProvider.notifier).markToday();
             Navigator.pop(ctx);
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content:
@@ -546,16 +547,29 @@ class _TaskList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final completedIds = ref.watch(completedTaskIdsProvider);
 
+    // Manuel görevler her zaman 'manual-' ön ekli — saatli plan bloklarından ayrı tut.
+    bool isManual(StudyTask t) => t.id.startsWith('manual-');
+
     final weakTasks =
-        tasks.where((t) => !t.isStrong && !t.isMola).toList();
+        tasks.where((t) => !t.isStrong && !t.isMola && !isManual(t)).toList();
+    // Plan kaynaklı güçlü dersler (manuel olmayan)
     final generatedStrongTasks =
-        tasks.where((t) => t.isStrong && !t.isMola && t.id.startsWith('s_')).toList();
-    final manualStrongTasks =
-        tasks.where((t) => t.isStrong && !t.isMola && !t.id.startsWith('s_')).toList();
+        tasks.where((t) => t.isStrong && !t.isMola && !isManual(t)).toList();
+    // Manuel eklenen görevler — web ile aynı: her zaman en sonda gösterilir
+    final manualStrongTasks = tasks.where(isManual).toList();
     final molaTasks = tasks.where((t) => t.isMola).toList();
 
+    // Gece kuşu: 04:00'dan küçük saatler ertesi günün gece saati (+24h) sayılır.
+    int sortKey(String hhmm) {
+      final p = hhmm.split(':');
+      if (p.length < 2) return 0;
+      final h = int.tryParse(p[0]) ?? 0;
+      final m = int.tryParse(p[1]) ?? 0;
+      final mins = h * 60 + m;
+      return mins < 4 * 60 ? mins + 24 * 60 : mins;
+    }
     final priorityTasks = [...weakTasks, ...molaTasks]
-      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+      ..sort((a, b) => sortKey(a.startTime).compareTo(sortKey(b.startTime)));
 
     final weakDone = weakTasks.isEmpty ||
         weakTasks.every((t) => completedIds.contains(t.id));
@@ -939,23 +953,52 @@ class _WeeklyPlanSheet extends ConsumerWidget {
                   const Center(child: Text('Plan yüklenemedi.')),
               data: (days) => ListView.builder(
                 controller: scrollController,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.fromLTRB(
+                    16, 0, 16, 24 + MediaQuery.of(context).padding.bottom),
                 itemCount: days.length,
                 itemBuilder: (_, i) {
                   final day = days[i];
                   final dateStr = DateFormat('d MMM – EEEE', 'tr_TR')
                       .format(day.date);
-                  return Column(
+                  final now = DateTime.now();
+                  final today =
+                      DateTime(now.year, now.month, now.day);
+                  final d = DateTime(day.date.year, day.date.month, day.date.day);
+                  final isPast = d.isBefore(today);
+                  return Opacity(
+                    opacity: isPast ? 0.55 : 1,
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Padding(
                         padding:
                             const EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          dateStr,
-                          style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800),
+                        child: Row(
+                          children: [
+                            Text(
+                              dateStr,
+                              style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800),
+                            ),
+                            if (isPast) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                ),
+                                child: Text('Geçmiş Gün',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade600)),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       if (day.isOffDay)
@@ -988,6 +1031,7 @@ class _WeeklyPlanSheet extends ConsumerWidget {
                         }),
                       const Divider(),
                     ],
+                  ),
                   );
                 },
               ),
@@ -1017,7 +1061,9 @@ class _AddTaskMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // Alt safe area + telefon nav bar boşluğu — son seçenek kapanmasın
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1187,7 +1233,8 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
 
                 return ListView.builder(
                   controller: widget.scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: EdgeInsets.fromLTRB(
+                      16, 0, 16, 24 + MediaQuery.of(context).padding.bottom),
                   itemCount: todayAndTomorrow.length,
                   itemBuilder: (_, i) {
                     final day = todayAndTomorrow[i];
@@ -1429,7 +1476,9 @@ class _ManualTaskSheetState extends ConsumerState<_ManualTaskSheet> {
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        // Alt safe area + nav bar boşluğu — Ekle/İptal butonları kapanmasın
+        padding: EdgeInsets.fromLTRB(
+            24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1556,37 +1605,21 @@ class _ManualTaskSheetState extends ConsumerState<_ManualTaskSheet> {
                   onPressed: _subject == null
                       ? null
                       : () {
-                          // Bugünkü son görevin bitiş saatini bul
-                          final todayTasks =
-                              ref.read(todayTasksProvider).value ?? [];
-                          int startMins = 9 * 60;
-                          if (todayTasks.isNotEmpty) {
-                            final last = todayTasks.last;
-                            final parts = last.endTime
-                                .split(':')
-                                .map(int.tryParse)
-                                .toList();
-                            if (parts.length == 2 &&
-                                parts[0] != null &&
-                                parts[1] != null) {
-                              startMins = parts[0]! * 60 + parts[1]! + 10;
-                            }
-                          }
-                          startMins = startMins % (24 * 60);
-                          final endMins = (startMins + _duration) % (24 * 60);
-                          String fmt(int m) =>
-                              '${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
+                          // Web ile aynı: manuel görev saatsiz eklenir,
+                          // programın sonunda görünür. id 'manual-' ön ekli.
                           final task = StudyTask(
-                            id: '${DateTime.now().millisecondsSinceEpoch}',
+                            id: 'manual-${DateTime.now().millisecondsSinceEpoch}',
                             subjectName: _subject!,
                             emoji: _emojiFor(_subject!),
-                            startTime: fmt(startMins),
-                            endTime: fmt(endMins),
+                            startTime: '',
+                            endTime: '',
                             durationMinutes: _duration,
                             taskType: _taskType,
                             isCompleted: false,
                             isMola: false,
-                            isStrong: true,
+                            // Web ile aynı: manuel görev isStrong=false; bölge ayrımı
+                            // 'manual-' id ön ekiyle yapılır.
+                            isStrong: false,
                             topicName: _topic,
                             date: DateTime.now(),
                           );

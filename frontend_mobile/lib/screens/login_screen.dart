@@ -8,6 +8,7 @@ import '../providers/gelisimim_provider.dart';
 import '../providers/study_plan_provider.dart';
 import '../screens/denemeler_screen.dart';
 import '../services/api_service.dart';
+import '../services/app_state_service.dart';
 import '../services/token_service.dart';
 import '../services/user_prefs_service.dart';
 import '../core/app_theme.dart';
@@ -78,7 +79,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ref.invalidate(questionSubjectsProvider);
         ref.invalidate(topicAssignmentsProvider);
         ref.invalidate(chatbotProvider);
-        ref.read(restDaysProvider.notifier).state = 0;
+        ref.invalidate(restDaysProvider);
         if (!mounted) return;
         await _checkOnboardingStatus();
       }
@@ -100,7 +101,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _checkOnboardingStatus() async {
     final userId = await TokenService.getUserId() ?? '';
 
-    // Backend'den profil kontrolü
+    // Tek doğruluk kaynağı: backend'de UserProfile kaydı varsa onboarding
+    // tamamlanmıştır. Mobil ve web her cihazda aynı sonucu verir.
     bool? profileExists;
     try {
       final response = await ApiService().dio.get('/UserProfile');
@@ -111,24 +113,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (e.response?.statusCode == 404) {
         profileExists = false; // Açıkça profil yok → onboarding
       }
-      // Diğer tüm DioException (bağlantı hatası, timeout, 500 vb.) → profileExists = null
+      // Bağlantı/timeout/500 → profileExists = null
     } catch (_) {
       // Beklenmedik hata → profileExists = null
     }
 
     if (profileExists == true) {
-      // Profil var, onboarding tamamlandı
+      // Profil var → onboarding tamamlandı. Senkron verileri backend'den indir.
       await UserPrefsService.setOnboardingCompleted(userId, true);
+      await AppStateService.hydrateAppState();
       if (mounted) context.go('/dashboard');
     } else if (profileExists == false) {
-      // Açıkça 404 → profil yok, local'e bak
-      final completed = await UserPrefsService.isOnboardingCompleted(userId);
-      if (mounted) context.go(completed ? '/dashboard' : '/onboarding');
+      // Açıkça 404 → backend'de profil yok → onboarding gerekli
+      if (mounted) context.go('/onboarding');
     } else {
-      // Ağ/sunucu hatası → local'e bak; local'de de yoksa dashboard'a gönder
-      // (giriş başarılıysa kullanıcı zaten kayıtlı, onboarding'e atmak yanlış)
-      final completed = await UserPrefsService.isOnboardingCompleted(userId);
-      if (mounted) context.go(completed ? '/dashboard' : '/dashboard');
+      // Ağ/sunucu hatası → karar veremiyoruz; kullanıcı tekrar denesin
+      if (mounted) {
+        _showSnack('Sunucuya ulaşılamadı. Lütfen tekrar giriş yapın.');
+      }
     }
   }
 
@@ -161,6 +163,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
+      // Klavye açılınca tüm Stack/gradient'i yeniden layout etme — kasmayı önler.
+      // İçerik zaten SingleChildScrollView içinde, klavye varken kaydırılabilir.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           // ── Gradient top section ────────────────────────────────────────

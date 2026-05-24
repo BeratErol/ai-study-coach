@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/chat_message.dart';
 import '../services/api_service.dart';
+import '../services/app_state_service.dart';
 import '../services/token_service.dart';
 import 'study_plan_provider.dart';
 
@@ -88,7 +89,9 @@ class ChatbotNotifier extends StateNotifier<ChatbotState> {
     _init();
   }
 
-  static String _prefsKey(String userId) => 'chatbot_conversations_$userId';
+  // Web ile ortak format: user_{userId}_chatbot_conversations
+  static String _prefsKey(String userId) =>
+      'user_${userId}_chatbot_conversations';
 
   Future<void> _init() async {
     _userId = await TokenService.getUserId();
@@ -132,9 +135,11 @@ class ChatbotNotifier extends StateNotifier<ChatbotState> {
 
   Future<void> _save() async {
     if (_userId == null) return;
+    final list = state.conversations.map((c) => c.toJson()).toList();
     final prefs = await SharedPreferences.getInstance();
-    final raw = jsonEncode(state.conversations.map((c) => c.toJson()).toList());
-    await prefs.setString(_prefsKey(_userId!), raw);
+    await prefs.setString(_prefsKey(_userId!), jsonEncode(list));
+    // Backend senkronu (web ile ortak 'chatbot_conversations' anahtarı)
+    await AppStateService.pushAppState('chatbot_conversations', list);
   }
 
   void _updateActive(Conversation updated) {
@@ -212,13 +217,15 @@ class ChatbotNotifier extends StateNotifier<ChatbotState> {
           ? historyToSend.sublist(historyToSend.length - 6)
           : historyToSend;
 
-      // Bugünkü görevleri payload'a ekle
+      // Bugünkü görevleri payload'a ekle — tamamlanma durumunu da gönder ki
+      // Koç bitenleri/kalanları görüp doğru tavsiye verebilsin.
       final todayPlan = await _ref.read(studyPlanProvider.future);
       final today = DateTime.now();
       final todayDay = todayPlan.firstWhere(
         (d) => d.date.year == today.year && d.date.month == today.month && d.date.day == today.day,
         orElse: () => todayPlan.isNotEmpty ? todayPlan.first : throw Exception('no plan'),
       );
+      final completedIds = _ref.read(completedTaskIdsProvider);
       final todayTasks = todayDay.blocks
           .where((b) => !b.isMola)
           .map((b) => {
@@ -228,6 +235,7 @@ class ChatbotNotifier extends StateNotifier<ChatbotState> {
                 'durationMinutes': b.durationMinutes,
                 'startTime': '${b.startTime.hour.toString().padLeft(2, '0')}:${b.startTime.minute.toString().padLeft(2, '0')}',
                 'endTime': '${b.endTime.hour.toString().padLeft(2, '0')}:${b.endTime.minute.toString().padLeft(2, '0')}',
+                'isCompleted': completedIds.contains(b.id),
               })
           .toList();
 

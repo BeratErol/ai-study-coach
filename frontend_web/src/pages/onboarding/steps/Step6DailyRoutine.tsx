@@ -14,16 +14,16 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 function TimeRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex items-center justify-between px-6 py-5 bg-white rounded-2xl border-2 border-gray-200 cursor-pointer hover:border-indigo-300 transition-colors mb-3">
-      <span className="text-gray-700 font-semibold text-lg">{label}</span>
+    <div className="flex items-center justify-between px-7 py-6 bg-white rounded-2xl border-2 border-gray-200 cursor-pointer hover:border-indigo-300 transition-colors mb-3">
+      <span className="text-gray-700 font-semibold text-xl">{label}</span>
       <div className="flex items-center gap-3">
         <input
           type="time"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="text-indigo-600 font-bold text-2xl border-none bg-transparent outline-none cursor-pointer"
+          className="text-indigo-600 font-bold text-3xl border-none bg-transparent outline-none cursor-pointer"
         />
-        <span className="text-2xl">🕐</span>
+        <span className="text-3xl">🕐</span>
       </div>
     </div>
   )

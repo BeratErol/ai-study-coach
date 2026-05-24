@@ -28,7 +28,11 @@ namespace Backend.Services
             profile.Gender = dto.Gender;
             profile.EducationLevel = dto.EducationLevel;
             profile.TargetExam = dto.TargetExam;
-            profile.ExamDate = dto.ExamDate;
+            // Npgsql timestamptz sütunu UTC Kind zorunlu kılar; JSON'dan gelen
+            // tarih Unspecified olabilir — UTC'ye normalize et.
+            profile.ExamDate = dto.ExamDate.HasValue
+                ? DateTime.SpecifyKind(dto.ExamDate.Value, DateTimeKind.Utc)
+                : null;
             profile.StudyType = dto.StudyType;
             profile.HasWeekdaySchool = dto.HasWeekdaySchool;
             profile.WeekdayStartTime = dto.WeekdayStartTime;

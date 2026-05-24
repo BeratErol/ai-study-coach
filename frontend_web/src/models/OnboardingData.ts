@@ -18,6 +18,7 @@ export interface OnboardingData {
   offDays: number[]
   strongSubjects: string[]
   weakSubjects: string[]
+  customSubjects: string[]
 }
 
 export const defaultOnboardingData: OnboardingData = {
@@ -40,4 +41,5 @@ export const defaultOnboardingData: OnboardingData = {
   offDays: [],
   strongSubjects: [],
   weakSubjects: [],
+  customSubjects: [],
 }

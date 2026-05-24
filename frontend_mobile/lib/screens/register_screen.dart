@@ -67,6 +67,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
+      // Klavye açılınca tüm Stack/gradient'i yeniden layout etme — kasmayı önler.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           Container(

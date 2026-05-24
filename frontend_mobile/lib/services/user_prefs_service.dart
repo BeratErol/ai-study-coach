@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_state_service.dart';
 
 class UserPrefsService {
   static String _key(String userId, String key) => 'user_${userId}_$key';
@@ -19,6 +20,7 @@ class UserPrefsService {
       String userId, Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key(userId, 'onboarding_data'), jsonEncode(data));
+    await AppStateService.pushAppState('onboarding_data', data);
   }
 
   static Future<Map<String, dynamic>?> getOnboardingData(
@@ -44,19 +46,39 @@ class UserPrefsService {
     await prefs.remove('chatbot_conversations_$userId');
   }
 
+  // Akademik hedef — web ile ortak tek-obje formatı: user_{userId}_exam_goal
+  // { tytHedef, tytNet, aytHedef, aytNet }
   static Future<void> saveExamGoal(String userId, {
     String? tytHedef, double? tytNet,
     String? aytHedef, double? aytNet,
   }) async {
+    final current = await getExamGoal(userId);
+    final goal = {
+      'tytHedef': tytHedef ?? current['tytHedef'],
+      'tytNet': tytNet ?? current['tytNet'],
+      'aytHedef': aytHedef ?? current['aytHedef'],
+      'aytNet': aytNet ?? current['aytNet'],
+    };
     final prefs = await SharedPreferences.getInstance();
-    if (tytHedef != null) await prefs.setString(_key(userId, 'tyt_hedef'), tytHedef);
-    if (tytNet != null) await prefs.setDouble(_key(userId, 'tyt_hedef_net'), tytNet);
-    if (aytHedef != null) await prefs.setString(_key(userId, 'ayt_hedef'), aytHedef);
-    if (aytNet != null) await prefs.setDouble(_key(userId, 'ayt_hedef_net'), aytNet);
+    await prefs.setString(_key(userId, 'exam_goal'), jsonEncode(goal));
+    await AppStateService.pushAppState('exam_goal', goal);
   }
 
   static Future<Map<String, dynamic>> getExamGoal(String userId) async {
     final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key(userId, 'exam_goal'));
+    if (raw != null) {
+      try {
+        final m = jsonDecode(raw) as Map<String, dynamic>;
+        return {
+          'tytHedef': m['tytHedef'],
+          'tytNet': (m['tytNet'] as num?)?.toDouble(),
+          'aytHedef': m['aytHedef'],
+          'aytNet': (m['aytNet'] as num?)?.toDouble(),
+        };
+      } catch (_) {}
+    }
+    // Eski 4-anahtar formatından geriye dönük okuma
     return {
       'tytHedef': prefs.getString(_key(userId, 'tyt_hedef')),
       'tytNet': prefs.getDouble(_key(userId, 'tyt_hedef_net')),

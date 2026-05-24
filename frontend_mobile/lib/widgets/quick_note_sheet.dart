@@ -26,12 +26,17 @@ class _QuickNoteSheetState extends ConsumerState<QuickNoteSheet> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
+    final mq = MediaQuery.of(context);
+    // Klavye açıksa viewInsets nav bar'ı zaten kapsar; kapalıysa safe area + 20.
+    final bottomPadding = mq.viewInsets.bottom > 0
+        ? mq.viewInsets.bottom + 16
+        : mq.padding.bottom + 20;
     return Padding(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
         top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        bottom: bottomPadding,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

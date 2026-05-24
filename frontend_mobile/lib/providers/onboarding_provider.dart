@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/onboarding_data.dart';
 import '../services/api_service.dart';
@@ -32,16 +31,18 @@ class OnboardingNotifier extends StateNotifier<OnboardingData> {
 
   Future<void> completeOnboarding() async {
     final userId = await TokenService.getUserId();
-    if (userId == null) return;
+    if (userId == null) {
+      throw Exception('Oturum bulunamadı.');
+    }
 
+    // Önce backend'e yaz — başarısız olursa hata fırlat, çağıran ele alsın.
+    // Profil backend'e kesin yazılmadan onboarding "tamamlandı" sayılmaz;
+    // aksi halde başka cihazda onboarding tekrar gösterilir.
+    await ApiService().dio.post('/UserProfile', data: state.toJson());
+
+    // Backend kaydı başarılı → yerel cache
     await UserPrefsService.setOnboardingCompleted(userId, true);
     await UserPrefsService.saveOnboardingData(userId, state.toJson());
-
-    try {
-      await ApiService().dio.post('/UserProfile', data: state.toJson());
-    } catch (e) {
-      debugPrint('UserProfile sync failed: $e');
-    }
   }
 }
 

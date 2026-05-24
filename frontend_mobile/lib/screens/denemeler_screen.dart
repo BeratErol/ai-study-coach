@@ -1700,6 +1700,27 @@ class _ExamFormSheetState extends ConsumerState<_ExamFormSheet> {
   bool get _isBrans => _selectedType?.apiType == 'BRANS';
   bool get _isOkulSinavi => _selectedType?.apiType == 'OKUL_SINAVI';
 
+  // Deneme adı için sınav türüne göre örnek placeholder (web ile aynı)
+  String _examNamePlaceholder(String? apiType) {
+    switch (apiType) {
+      case 'TYT':              return '3D Yayınları TYT Genel';
+      case 'AYT_SAYISAL':      return 'Karekök AYT Sayısal';
+      case 'AYT_EA':           return 'Limit AYT Eşit Ağırlık';
+      case 'AYT_SOZEL':        return 'Palme AYT Sözel';
+      case 'AYT_DIL':          return 'Pelikan YDT İngilizce';
+      case 'BRANS':            return 'Bilfen Matematik Branş Denemesi';
+      case 'LGS':              return 'Çağdaş Eğitim LGS Genel';
+      case 'KPSS_LISANS':      return '2024 KPSS Çıkmış Sorular';
+      case 'KPSS_ONLISANS':    return 'Yargı KPSS Ön Lisans';
+      case 'KPSS_ORTAOGRETIM': return 'Yediiklim KPSS Ortaöğretim';
+      case 'ALES':             return 'Pegem ALES Genel';
+      case 'YDS':              return 'ÖSYM YDS Çıkmış Sorular';
+      case 'OABT':             return 'Pegem ÖABT Branş';
+      case 'OKUL_SINAVI':      return '2024 Okul Sınavı';
+      default:                 return 'Deneme adı';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1910,11 +1931,12 @@ class _ExamFormSheetState extends ConsumerState<_ExamFormSheet> {
                 controller: ctrl,
                 padding: const EdgeInsets.all(20),
                 children: [
-                  // Deneme adı
+                  // Deneme adı — placeholder seçili sınava göre örnek verir
                   TextField(
                     controller: _titleCtrl,
                     decoration: InputDecoration(
-                      hintText: 'Deneme Adı (opsiyonel)',
+                      hintText:
+                          'örn. ${_examNamePlaceholder(_selectedType?.apiType)}',
                       prefixIcon: const Icon(Icons.label_outline),
                       filled: true,
                       fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,

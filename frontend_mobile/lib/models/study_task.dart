@@ -92,19 +92,23 @@ class StudyTask {
         'isMola': isMola,
         'isStrong': isStrong,
         'topicName': topicName,
-        'date': date.toIso8601String(),
+        // Web ile ortak format: YYYY-MM-DD (web ManualTask.date bunu bekler).
+        'date':
+            '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
       };
 
+  // Web ile ortak şema toleranslı: web manuel görevi saatsiz/emojisiz yazar
+  // (startTime, endTime, emoji, isCompleted, isMola eksik olabilir).
   factory StudyTask.fromJson(Map<String, dynamic> json) => StudyTask(
         id: json['id'] as String,
         subjectName: json['subjectName'] as String,
-        emoji: json['emoji'] as String,
-        startTime: json['startTime'] as String,
-        endTime: json['endTime'] as String,
-        durationMinutes: json['durationMinutes'] as int,
-        taskType: json['taskType'] as String,
-        isCompleted: json['isCompleted'] as bool,
-        isMola: json['isMola'] as bool,
+        emoji: (json['emoji'] as String?) ?? '📝',
+        startTime: (json['startTime'] as String?) ?? '',
+        endTime: (json['endTime'] as String?) ?? '',
+        durationMinutes: (json['durationMinutes'] as num?)?.toInt() ?? 60,
+        taskType: (json['taskType'] as String?) ?? 'konu_anlatimi',
+        isCompleted: (json['isCompleted'] as bool?) ?? false,
+        isMola: (json['isMola'] as bool?) ?? false,
         isStrong: json['isStrong'] as bool? ?? false,
         topicName: json['topicName'] as String?,
         date: DateTime.parse(json['date'] as String),

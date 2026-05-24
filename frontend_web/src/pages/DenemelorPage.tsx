@@ -1,902 +1,1021 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  CartesianGrid,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
 } from 'recharts'
-import { denemeService, type CreateExamDto, type ExamRecord } from '../services/denemeService'
 import { useUserProfile } from '../hooks/useUserProfile'
-import { getSubjectsForExam } from '../data/subjectsData'
+import { denemeService, type ExamRecord, type CreateExamBody } from '../services/denemeService'
+import {
+  examTypes, availableExamTypes, bransBranchLessons, examTypeDisplayName,
+  type ExamTypeInfo, type LessonSlot,
+} from '../data/examTypeData'
+import { getOnboardingData } from '../services/userPrefsService'
+import { getUserId } from '../services/tokenService'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Yardımcılar ──────────────────────────────────────────────────────────────
 
-type FilterRange = '7' | '30' | 'all'
+const CHART_COLORS = ['#5B5FC7', '#10B981', '#EF4444', '#F59E0B', '#8B5CF6']
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const PIE_COLORS = [
-  '#4F46E5', '#6D28D9', '#10B981', '#F59E0B',
-  '#EF4444', '#EC4899', '#06B6D4', '#8B5CF6',
-  '#F97316', '#14B8A6',
-]
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function calcNet(correct: number, wrong: number): number {
-  return Math.max(0, correct - wrong / 4)
+// Deneme adı için sınav türüne göre örnek placeholder
+function examNamePlaceholder(apiType: string): string {
+  switch (apiType) {
+    case 'TYT':            return '3D Yayınları TYT Genel'
+    case 'AYT_SAYISAL':    return 'Karekök AYT Sayısal'
+    case 'AYT_EA':         return 'Limit AYT Eşit Ağırlık'
+    case 'AYT_SOZEL':      return 'Palme AYT Sözel'
+    case 'AYT_DIL':        return 'Pelikan YDT İngilizce'
+    case 'BRANS':          return 'Bilfen Matematik Branş Denemesi'
+    case 'LGS':            return 'Çağdaş Eğitim LGS Genel'
+    case 'KPSS_LISANS':    return '2024 KPSS Çıkmış Sorular'
+    case 'KPSS_ONLISANS':  return 'Yargı KPSS Ön Lisans'
+    case 'KPSS_ORTAOGRETIM': return 'Yediiklim KPSS Ortaöğretim'
+    case 'ALES':           return 'Pegem ALES Genel'
+    case 'YDS':            return 'ÖSYM YDS Çıkmış Sorular'
+    case 'OABT':           return 'Pegem ÖABT Branş'
+    case 'OKUL_SINAVI':    return '2024 Okul Sınavı'
+    default:               return 'Deneme adı'
+  }
 }
 
-function filterByRange(exams: ExamRecord[], range: FilterRange): ExamRecord[] {
-  if (range === 'all') return exams
-  const days = parseInt(range, 10)
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - days)
-  return exams.filter((e) => new Date(e.date) >= cutoff)
+function sortByDate(exams: ExamRecord[]): ExamRecord[] {
+  return [...exams].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 }
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
+function detailNet(exam: ExamRecord, lessonName: string): number {
+  return exam.details.find((d) => d.lessonName === lessonName)?.net ?? 0
+}
 
-function Skeleton({ className }: { className?: string }) {
+function fmtDate(s: string): string {
+  const d = new Date(s)
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
+}
+
+function shortDate(s: string): string {
+  const d = new Date(s)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+// ─── Modal kabuğu ─────────────────────────────────────────────────────────────
+
+function ModalShell({ title, subtitle, onClose, children }: {
+  title: string
+  subtitle?: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
   return (
     <div
-      className={`animate-pulse rounded-xl ${className ?? ''}`}
-      style={{ background: 'var(--border)' }}
-    />
-  )
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
-export default function DenemelorPage() {
-  const { profile } = useUserProfile()
-  const [allExams, setAllExams] = useState<ExamRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [deleteId, setDeleteId] = useState<number | null>(null)
-  const [expandedId, setExpandedId] = useState<number | null>(null)
-  const [filter, setFilter] = useState<FilterRange>('all')
-  const [aiText, setAiText] = useState<string | null>(null)
-  const [aiLoading, setAiLoading] = useState(true)
-  const [aiError, setAiError] = useState(false)
-
-  // Fetch exams
-  useEffect(() => {
-    denemeService
-      .getAll()
-      .then((list) => setAllExams(list))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
-  // Fetch AI recommendation
-  useEffect(() => {
-    denemeService
-      .getAiRecommendation()
-      .then((text) => {
-        if (text) setAiText(text)
-        else setAiError(true)
-      })
-      .catch(() => setAiError(true))
-      .finally(() => setAiLoading(false))
-  }, [])
-
-  const exams = filterByRange(allExams, filter)
-
-  // Sort newest first for the table
-  const tableExams = [...exams].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-  )
-
-  // Sort oldest first for the line chart
-  const chartExams = [...exams].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-  )
-
-  const lineData = chartExams.map((e) => ({
-    tarih: new Date(e.date).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' }),
-    net: parseFloat(e.totalNet.toFixed(2)),
-  }))
-
-  // Pie: average net per subject
-  const subjectMap: Record<string, number[]> = {}
-  exams.forEach((e) => {
-    e.subjectNets?.forEach((s) => {
-      if (!subjectMap[s.subjectName]) subjectMap[s.subjectName] = []
-      subjectMap[s.subjectName].push(s.net)
-    })
-  })
-  const pieData = Object.entries(subjectMap)
-    .map(([name, nets]) => ({
-      name,
-      value: parseFloat((nets.reduce((a, b) => a + b, 0) / nets.length).toFixed(2)),
-    }))
-    .filter((d) => d.value > 0)
-    .sort((a, b) => b.value - a.value)
-
-  // Summary stats
-  const avgNet =
-    exams.length > 0
-      ? (exams.reduce((s, e) => s + e.totalNet, 0) / exams.length).toFixed(2)
-      : '—'
-  const bestNet =
-    exams.length > 0 ? Math.max(...exams.map((e) => e.totalNet)).toFixed(2) : '—'
-
-  async function handleDelete(id: number) {
-    await denemeService.delete(id).catch(() => {})
-    setAllExams((prev) => prev.filter((e) => e.id !== id))
-    setDeleteId(null)
-    setExpandedId(null)
-  }
-
-  function onAdded(exam: ExamRecord) {
-    setAllExams((prev) => [exam, ...prev])
-    setShowModal(false)
-  }
-
-  return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      {/* ── Gradient Header Banner ─────────────────────────────────────────── */}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div
-        className="px-10 py-14"
-        style={{ background: 'linear-gradient(135deg, #312E81 0%, #4F46E5 50%, #7C3AED 100%)' }}
+        className="w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col"
+        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
       >
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+        <div className="px-7 py-6" style={{ background: 'linear-gradient(135deg, #C0392B, #E74C3C)' }}>
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-5xl sm:text-6xl font-extrabold text-white tracking-tight">
-                📝 Denemeler
-              </h1>
-              <p className="text-white/70 mt-2 text-lg">
-                Deneme sınavlarını takip et, trendini gör, gelişimini ölç.
-              </p>
+              <h3 className="text-2xl font-extrabold text-white">{title}</h3>
+              {subtitle && <p className="text-base text-white/75 mt-1">{subtitle}</p>}
             </div>
             <button
-              onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 px-8 py-4 rounded-2xl text-lg font-bold text-white shadow-lg hover:opacity-90 transition-opacity self-start sm:self-auto"
-              style={{ background: 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.4)', backdropFilter: 'blur(8px)' }}
+              onClick={onClose}
+              className="w-10 h-10 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all text-xl"
             >
-              <span className="text-2xl">+</span>
-              Deneme Ekle
+              ✕
             </button>
           </div>
-
-          {/* Filter Chips */}
-          <div className="flex gap-2 mt-6 flex-wrap">
-            {([['7', 'Son 7 Gün'], ['30', 'Son 30 Gün'], ['all', 'Tümü']] as [FilterRange, string][]).map(
-              ([val, label]) => (
-                <button
-                  key={val}
-                  onClick={() => setFilter(val)}
-                  className="px-5 py-2 rounded-full text-sm font-semibold transition-all"
-                  style={{
-                    background: filter === val ? '#fff' : 'rgba(255,255,255,0.15)',
-                    color: filter === val ? '#4F46E5' : 'rgba(255,255,255,0.85)',
-                    border: `2px solid ${filter === val ? '#fff' : 'rgba(255,255,255,0.3)'}`,
-                  }}
-                >
-                  {label}
-                </button>
-              ),
-            )}
-          </div>
-
-          {/* Summary Stats Strip */}
-          <div className="grid grid-cols-3 gap-5 mt-7">
-            {[
-              { label: 'Ortalama Net', value: avgNet, icon: '📊' },
-              { label: 'En İyi Net', value: bestNet, icon: '🏆' },
-              { label: 'Toplam Deneme', value: exams.length, icon: '📝' },
-            ].map((stat) => (
-              <div
-                key={stat.label}
-                className="rounded-2xl px-6 py-5"
-                style={{ background: 'rgba(255,255,255,0.12)', border: '1.5px solid rgba(255,255,255,0.25)' }}
-              >
-                <p className="text-white/60 text-sm font-semibold uppercase tracking-widest">
-                  {stat.icon} {stat.label}
-                </p>
-                <p className="text-5xl font-extrabold text-white mt-2">{stat.value}</p>
-              </div>
-            ))}
-          </div>
         </div>
+        <div className="p-7 overflow-y-auto">{children}</div>
       </div>
-
-      {/* ── Page Body ─────────────────────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-10 py-10 space-y-8">
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Net Trendi */}
-          <div
-            className="rounded-3xl p-6 shadow-lg"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-          >
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="text-2xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                  📈 Net Trendi
-                </h2>
-                <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                  Zaman içindeki net gelişimin
-                </p>
-              </div>
-            </div>
-            {loading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-5 w-1/3" />
-                <Skeleton className="h-48 w-full" />
-              </div>
-            ) : lineData.length < 2 ? (
-              <div className="h-52 flex flex-col items-center justify-center gap-2" style={{ color: 'var(--text-hint)' }}>
-                <span className="text-5xl">📉</span>
-                <p className="text-sm font-medium">En az 2 deneme ekleyin</p>
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={lineData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis
-                    dataKey="tarih"
-                    tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: 'var(--text-hint)' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: 'var(--card)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 16,
-                      boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-                    }}
-                    labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}
-                    formatter={(v) => [v as number, 'Toplam Net']}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="net"
-                    stroke="#4F46E5"
-                    strokeWidth={3}
-                    dot={{ fill: '#4F46E5', r: 5, strokeWidth: 2, stroke: '#fff' }}
-                    activeDot={{ r: 7, strokeWidth: 2, stroke: '#fff' }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          {/* Ders Net Dağılımı */}
-          <div
-            className="rounded-3xl p-6 shadow-lg"
-            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-          >
-            <div className="mb-5">
-              <h2 className="text-xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                🎯 Ders Net Dağılımı
-              </h2>
-              <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                Derslere göre ortalama netler
-              </p>
-            </div>
-            {loading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-48 w-full" />
-              </div>
-            ) : pieData.length === 0 ? (
-              <div className="h-52 flex flex-col items-center justify-center gap-2" style={{ color: 'var(--text-hint)' }}>
-                <span className="text-5xl">🍕</span>
-                <p className="text-sm font-medium">Ders verisi henüz yok</p>
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="48%"
-                    outerRadius={85}
-                    innerRadius={40}
-                    paddingAngle={2}
-                    labelLine={false}
-                  >
-                    {pieData.map((_, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Legend
-                    formatter={(v) => (
-                      <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{v}</span>
-                    )}
-                  />
-                  <Tooltip
-                    formatter={(v) => [(v as number).toFixed(2), 'Ort. Net']}
-                    contentStyle={{
-                      background: 'var(--card)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 14,
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        {/* AI Tavsiyesi */}
-        <div
-          className="rounded-3xl p-6 shadow-lg overflow-hidden relative"
-          style={{
-            background: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 40%, #4C1D95 100%)',
-          }}
-        >
-          {/* Decorative circles */}
-          <div
-            className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10"
-            style={{
-              background: 'radial-gradient(circle, #818CF8, transparent)',
-              transform: 'translate(30%, -30%)',
-              pointerEvents: 'none',
-            }}
-          />
-          <div className="relative">
-            <div className="flex items-center gap-3 mb-4">
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl"
-                style={{ background: 'rgba(255,255,255,0.15)' }}
-              >
-                🤖
-              </div>
-              <div>
-                <h2 className="text-xl font-extrabold text-white">AI Tavsiyesi</h2>
-                <p className="text-white/60 text-sm">Yapay zeka analizine dayalı kişisel tavsiye</p>
-              </div>
-            </div>
-
-            {aiLoading ? (
-              <div className="space-y-3">
-                <div className="h-4 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.15)', width: '85%' }} />
-                <div className="h-4 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.12)', width: '70%' }} />
-                <div className="h-4 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.10)', width: '60%' }} />
-              </div>
-            ) : aiError || !aiText ? (
-              <div className="flex items-center gap-3 px-4 py-3 rounded-2xl" style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)' }}>
-                <span className="text-xl">⚠️</span>
-                <p className="text-white/80 text-sm">AI tavsiyesi yüklenemedi. Lütfen daha sonra tekrar deneyin.</p>
-              </div>
-            ) : (
-              <p className="text-white/90 text-base leading-relaxed">{aiText}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Exams Table */}
-        <div
-          className="rounded-3xl overflow-hidden shadow-lg"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-        >
-          <div
-            className="px-6 py-5 flex items-center justify-between"
-            style={{ borderBottom: '1px solid var(--border)' }}
-          >
-            <div>
-              <h2 className="text-xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                Son Denemeler
-              </h2>
-              <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                {exams.length} deneme {filter !== 'all' ? `(son ${filter} gün)` : ''}
-              </p>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="p-6 space-y-4">
-              {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-14 w-full" />
-              ))}
-            </div>
-          ) : exams.length === 0 ? (
-            <div className="text-center py-16" style={{ color: 'var(--text-hint)' }}>
-              <p className="text-6xl mb-4">📝</p>
-              <p className="font-bold text-lg" style={{ color: 'var(--text-secondary)' }}>
-                Henüz deneme eklenmedi
-              </p>
-              <p className="text-sm mt-1">
-                "Deneme Ekle" butonuna tıklayarak ilk denemenizi girin.
-              </p>
-              <button
-                onClick={() => setShowModal(true)}
-                className="mt-6 px-6 py-3 rounded-2xl text-sm font-bold text-white inline-flex items-center gap-2"
-                style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
-              >
-                + İlk Denemeyi Ekle
-              </button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                    {['Tarih', 'Toplam Net', 'Ders Sayısı', 'İşlemler'].map((h) => (
-                      <th
-                        key={h}
-                        className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest"
-                        style={{ color: 'var(--text-secondary)' }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {tableExams.map((exam) => (
-                    <>
-                      <tr
-                        key={exam.id}
-                        className="transition-colors cursor-pointer"
-                        style={{ borderBottom: '1px solid var(--border)' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                        onClick={() => setExpandedId(expandedId === exam.id ? null : exam.id)}
-                      >
-                        <td className="px-6 py-4">
-                          <div
-                            className="font-semibold text-base"
-                            style={{ color: 'var(--text-primary)' }}
-                          >
-                            {new Date(exam.date).toLocaleDateString('tr-TR', {
-                              day: '2-digit',
-                              month: 'long',
-                              year: 'numeric',
-                            })}
-                          </div>
-                          <div className="text-xs mt-0.5" style={{ color: 'var(--text-hint)' }}>
-                            {new Date(exam.date).toLocaleDateString('tr-TR', { weekday: 'long' })}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className="text-3xl font-extrabold"
-                            style={{ color: 'var(--primary)' }}
-                          >
-                            {exam.totalNet.toFixed(2)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold"
-                            style={{ background: '#EEF2FF', color: '#4F46E5' }}
-                          >
-                            {exam.subjectNets?.length ?? 0} ders
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setExpandedId(expandedId === exam.id ? null : exam.id)
-                              }}
-                              className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
-                              style={{ background: '#EEF2FF', color: '#4F46E5' }}
-                            >
-                              {expandedId === exam.id ? '▲ Gizle' : '▼ Detay'}
-                            </button>
-
-                            {deleteId === exam.id ? (
-                              <>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDelete(exam.id)
-                                  }}
-                                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-white"
-                                  style={{ background: '#EF4444' }}
-                                >
-                                  Evet, Sil
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setDeleteId(null)
-                                  }}
-                                  className="px-3 py-1.5 rounded-xl text-xs font-semibold"
-                                  style={{
-                                    background: 'var(--bg)',
-                                    color: 'var(--text-secondary)',
-                                    border: '1px solid var(--border)',
-                                  }}
-                                >
-                                  İptal
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setDeleteId(exam.id)
-                                }}
-                                className="w-9 h-9 flex items-center justify-center rounded-xl text-base transition-all hover:scale-110"
-                                style={{ background: '#FEF2F2', color: '#EF4444' }}
-                                title="Sil"
-                              >
-                                🗑️
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* Expanded row */}
-                      {expandedId === exam.id && exam.subjectNets && exam.subjectNets.length > 0 && (
-                        <tr key={`${exam.id}-detail`} style={{ background: 'var(--bg)' }}>
-                          <td colSpan={4} className="px-6 py-4">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                              {exam.subjectNets.map((s) => (
-                                <div
-                                  key={s.subjectName}
-                                  className="rounded-2xl p-3"
-                                  style={{
-                                    background: 'var(--card)',
-                                    border: '1px solid var(--border)',
-                                  }}
-                                >
-                                  <p
-                                    className="text-xs font-semibold truncate"
-                                    style={{ color: 'var(--text-secondary)' }}
-                                  >
-                                    {s.subjectName}
-                                  </p>
-                                  <p
-                                    className="text-2xl font-extrabold mt-1"
-                                    style={{ color: 'var(--primary)' }}
-                                  >
-                                    {s.net.toFixed(2)}
-                                  </p>
-                                  <p className="text-xs mt-1" style={{ color: 'var(--text-hint)' }}>
-                                    ✅ {s.correct} &nbsp; ❌ {s.wrong}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Add Exam Modal */}
-      {showModal && (
-        <AddExamModal
-          profile={profile}
-          onClose={() => setShowModal(false)}
-          onAdded={onAdded}
-        />
-      )}
     </div>
   )
 }
 
-// ─── Add Exam Modal ───────────────────────────────────────────────────────────
+// ─── Deneme ekleme/düzenleme formu ────────────────────────────────────────────
 
-interface SubjectRow {
-  name: string
-  correct: number
-  wrong: number
-}
-
-function AddExamModal({
-  profile,
-  onClose,
-  onAdded,
-}: {
-  profile: { targetExam: string; selectedArea: string } | null
+function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSaved }: {
+  existing: ExamRecord | null
+  availableTypes: ExamTypeInfo[]
+  branchLessons: LessonSlot[]
   onClose: () => void
-  onAdded: (exam: ExamRecord) => void
+  onSaved: () => void
 }) {
-  const subjects =
-    profile ? getSubjectsForExam(profile.targetExam, profile.selectedArea) : []
+  const initialType = existing
+    ? availableTypes.find((t) => t.apiType === existing.type) ?? availableTypes[0]
+    : availableTypes[0]
 
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [rows, setRows] = useState<SubjectRow[]>(() =>
-    subjects.length > 0
-      ? subjects.map((s) => ({ name: s.name, correct: 0, wrong: 0 }))
-      : [{ name: '', correct: 0, wrong: 0 }],
+  const [title, setTitle] = useState(existing?.title ?? '')
+  const [selectedType, setSelectedType] = useState<ExamTypeInfo>(initialType)
+  const [date, setDate] = useState(
+    existing ? existing.date.slice(0, 10) : new Date().toISOString().slice(0, 10),
   )
+  const [bransLesson, setBransLesson] = useState<string>(
+    existing?.type === 'BRANS' ? existing.details[0]?.lessonName ?? '' : '',
+  )
+  // lessonName → { correct, wrong }
+  const [values, setValues] = useState<Record<string, { correct: number; wrong: number }>>(() => {
+    const init: Record<string, { correct: number; wrong: number }> = {}
+    existing?.details.forEach((d) => {
+      init[d.lessonName] = { correct: d.correct, wrong: d.incorrect }
+    })
+    return init
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  function updateRow(i: number, field: keyof SubjectRow, val: number | string) {
-    setRows((prev) =>
-      prev.map((r, idx) => {
-        if (idx !== i) return r
-        if (field === 'name') return { ...r, name: val as string }
-        return { ...r, [field]: Math.max(0, val as number) }
-      }),
-    )
-  }
+  const isBrans = selectedType.apiType === 'BRANS'
+  const activeLessons: LessonSlot[] = isBrans
+    ? branchLessons.filter((l) => l.name === bransLesson)
+    : selectedType.lessons
 
-  function addManualRow() {
-    setRows((prev) => [...prev, { name: '', correct: 0, wrong: 0 }])
-  }
+  const totalNet = activeLessons.reduce((sum, l) => {
+    const v = values[l.name] ?? { correct: 0, wrong: 0 }
+    return sum + (v.correct - v.wrong / 4)
+  }, 0)
 
-  function removeRow(i: number) {
-    setRows((prev) => prev.filter((_, idx) => idx !== i))
+  function setVal(lesson: string, field: 'correct' | 'wrong', n: number) {
+    setValues((prev) => ({
+      ...prev,
+      [lesson]: { ...(prev[lesson] ?? { correct: 0, wrong: 0 }), [field]: Math.max(0, n) },
+    }))
   }
-
-  const totalNet = rows.reduce((s, r) => s + calcNet(r.correct, r.wrong), 0)
 
   async function save() {
-    if (!date) {
-      setError('Lütfen bir tarih seçin.')
+    if (isBrans && !bransLesson) {
+      setError('Lütfen bir ders seç.')
       return
     }
-    const validRows = rows.filter((r) => r.name.trim() && (r.correct > 0 || r.wrong > 0))
-    if (validRows.length === 0) {
+    const details = activeLessons.map((l) => {
+      const v = values[l.name] ?? { correct: 0, wrong: 0 }
+      return { lessonName: l.name, correct: v.correct, incorrect: v.wrong }
+    })
+    if (details.every((d) => d.correct === 0 && d.incorrect === 0)) {
       setError('En az bir derse sonuç girmelisin.')
       return
     }
     setSaving(true)
     setError(null)
     try {
-      const examType = profile?.targetExam || 'Deneme'
-      const dto: CreateExamDto = {
-        title: `${examType} Denemesi - ${new Date(date).toLocaleDateString('tr-TR')}`,
-        type: examType,
+      const body: CreateExamBody = {
+        title: title.trim() || `${selectedType.displayName} Denemesi`,
         date: new Date(`${date}T12:00:00`).toISOString(),
-        subjects: validRows.map((r) => ({
-          name: r.name,
-          correct: r.correct,
-          wrong: r.wrong,
-        })),
+        type: selectedType.apiType,
+        details,
       }
-      const exam = await denemeService.create(dto)
-      onAdded(exam)
+      if (existing) await denemeService.update(existing.id, body)
+      else await denemeService.create(body)
+      onSaved()
+      onClose()
     } catch {
-      setError('Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.')
+      setError('Kayıt sırasında bir hata oluştu.')
       setSaving(false)
     }
   }
 
-  const isManual = subjects.length === 0
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    <ModalShell
+      title={existing ? '📝 Denemeyi Düzenle' : '📝 Deneme Sonucu Ekle'}
+      onClose={onClose}
     >
-      <div
-        className="w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl flex flex-col"
-        style={{ background: 'var(--card)', maxHeight: '92vh' }}
-      >
-        {/* Modal Header */}
-        <div
-          className="px-6 py-5 flex items-center justify-between"
-          style={{
-            background: 'linear-gradient(135deg, #312E81, #4F46E5)',
-          }}
-        >
-          <div>
-            <h2 className="text-xl font-extrabold text-white">📝 Yeni Deneme Ekle</h2>
-            {profile && (
-              <p className="text-white/70 text-sm mt-0.5">
-                {profile.targetExam}
-                {profile.selectedArea ? ` — ${profile.selectedArea}` : ''}
-              </p>
-            )}
+      <div className="space-y-5">
+        {error && (
+          <div className="px-4 py-3 rounded-xl text-base" style={{ background: '#FEF2F2', color: '#EF4444' }}>
+            {error}
           </div>
-          <button
-            onClick={onClose}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-all"
-          >
-            ✕
-          </button>
+        )}
+
+        <div>
+          <label className="block text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Deneme Adı</label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={`örn. ${examNamePlaceholder(selectedType.apiType)}`}
+            className="w-full h-14 px-4 rounded-xl text-base outline-none"
+            style={{ background: 'var(--bg)', border: '2px solid var(--border)', color: 'var(--text-primary)' }}
+          />
         </div>
 
-        {/* Modal Body */}
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
-          {/* Date */}
+        <div>
+          <label className="block text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Deneme Türü</label>
+          <select
+            value={selectedType.apiType}
+            onChange={(e) => {
+              const t = availableTypes.find((x) => x.apiType === e.target.value)!
+              setSelectedType(t)
+              setBransLesson('')
+              setValues({})
+            }}
+            className="w-full h-14 px-4 rounded-xl text-base outline-none"
+            style={{ background: 'var(--bg)', border: '2px solid var(--border)', color: 'var(--text-primary)' }}
+          >
+            {availableTypes.map((t) => <option key={t.apiType} value={t.apiType}>{t.displayName}</option>)}
+          </select>
+        </div>
+
+        {isBrans && (
           <div>
-            <label
-              className="block text-sm font-bold mb-2"
-              style={{ color: 'var(--text-primary)' }}
+            <label className="block text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Ders Seç</label>
+            <select
+              value={bransLesson}
+              onChange={(e) => setBransLesson(e.target.value)}
+              className="w-full h-14 px-4 rounded-xl text-base outline-none"
+              style={{ background: 'var(--bg)', border: '2px solid var(--border)', color: 'var(--text-primary)' }}
             >
-              📅 Sınav Tarihi
-            </label>
-            <input
-              type="date"
-              value={date}
-              max={new Date().toISOString().split('T')[0]}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-4 py-3 rounded-2xl text-base outline-none transition-all"
-              style={{
-                background: 'var(--bg)',
-                border: '2px solid var(--border)',
-                color: 'var(--text-primary)',
-              }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = '#4F46E5')}
-              onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
-            />
+              <option value="">Ders seç</option>
+              {branchLessons.map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
+            </select>
           </div>
+        )}
 
-          {/* Rows */}
-          <div>
-            <div
-              className="grid gap-2 mb-3 text-xs font-bold uppercase tracking-widest"
-              style={{
-                gridTemplateColumns: isManual ? '1fr 80px 80px 60px 32px' : '1fr 80px 80px 60px',
-                color: 'var(--text-secondary)',
-              }}
-            >
-              <span>Ders</span>
-              <span className="text-center">Doğru</span>
-              <span className="text-center">Yanlış</span>
-              <span className="text-center">Net</span>
-              {isManual && <span />}
-            </div>
+        <div>
+          <label className="block text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Tarih</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            max={new Date().toISOString().slice(0, 10)}
+            className="w-full h-14 px-4 rounded-xl text-base outline-none"
+            style={{ background: 'var(--bg)', border: '2px solid var(--border)', color: 'var(--text-primary)' }}
+          />
+        </div>
 
-            <div className="space-y-2">
-              {rows.map((row, i) => {
-                const net = calcNet(row.correct, row.wrong)
+        {/* Toplam net */}
+        <div
+          className="rounded-2xl py-5 px-6 text-center"
+          style={{ background: 'rgba(79,70,229,0.07)', border: '1.5px solid rgba(79,70,229,0.35)' }}
+        >
+          <p className="text-xl font-extrabold" style={{ color: 'var(--primary)' }}>
+            Toplam Net: {totalNet.toFixed(2)}
+          </p>
+          <p className="text-base mt-1" style={{ color: 'var(--text-hint)' }}>
+            Net = Doğru − (Yanlış ÷ 4)
+          </p>
+        </div>
+
+        {/* Ders bazlı doğru/yanlış */}
+        <div>
+          <p className="text-base font-bold mb-3" style={{ color: 'var(--text-primary)' }}>Ders Bazlı Doğru / Yanlış</p>
+          {isBrans && !bransLesson ? (
+            <p className="text-base" style={{ color: 'var(--text-hint)' }}>Ders seçtikten sonra doğru/yanlış girebilirsin.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex gap-3 px-1">
+                <div className="flex-1" />
+                <span className="w-24 text-center text-base font-bold" style={{ color: '#10B981' }}>Doğru</span>
+                <span className="w-24 text-center text-base font-bold" style={{ color: '#EF4444' }}>Yanlış</span>
+              </div>
+              {activeLessons.map((l) => {
+                const v = values[l.name] ?? { correct: 0, wrong: 0 }
                 return (
-                  <div
-                    key={i}
-                    className="grid gap-2 items-center"
-                    style={{
-                      gridTemplateColumns: isManual ? '1fr 80px 80px 60px 32px' : '1fr 80px 80px 60px',
-                    }}
-                  >
-                    {isManual ? (
-                      <input
-                        type="text"
-                        placeholder="Ders adı"
-                        value={row.name}
-                        onChange={(e) => updateRow(i, 'name', e.target.value)}
-                        className="px-3 py-2 rounded-xl text-sm outline-none"
-                        style={{
-                          background: 'var(--bg)',
-                          border: '1px solid var(--border)',
-                          color: 'var(--text-primary)',
-                        }}
-                      />
-                    ) : (
-                      <div
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                        style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
-                      >
-                        <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                          {row.name}
-                        </span>
-                      </div>
-                    )}
-
+                  <div key={l.name} className="flex items-center gap-3">
+                    <span className="flex-1 text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      {l.name} <span style={{ color: 'var(--text-hint)' }}>({l.maxQuestions})</span>
+                    </span>
                     <input
                       type="number"
-                      min={0}
-                      value={row.correct === 0 ? '' : row.correct}
+                      value={v.correct || ''}
+                      onChange={(e) => setVal(l.name, 'correct', parseInt(e.target.value) || 0)}
                       placeholder="0"
-                      onChange={(e) => updateRow(i, 'correct', parseInt(e.target.value) || 0)}
-                      className="px-2 py-2 rounded-xl text-sm text-center outline-none"
-                      style={{
-                        background: '#F0FDF4',
-                        border: '1px solid #BBF7D0',
-                        color: '#065F46',
-                        fontWeight: 700,
-                      }}
+                      className="w-24 h-12 px-2 rounded-xl text-base text-center outline-none"
+                      style={{ background: 'var(--bg)', border: '1.5px solid #BBF7D0', color: 'var(--text-primary)' }}
                     />
                     <input
                       type="number"
-                      min={0}
-                      value={row.wrong === 0 ? '' : row.wrong}
+                      value={v.wrong || ''}
+                      onChange={(e) => setVal(l.name, 'wrong', parseInt(e.target.value) || 0)}
                       placeholder="0"
-                      onChange={(e) => updateRow(i, 'wrong', parseInt(e.target.value) || 0)}
-                      className="px-2 py-2 rounded-xl text-sm text-center outline-none"
-                      style={{
-                        background: '#FEF2F2',
-                        border: '1px solid #FECACA',
-                        color: '#991B1B',
-                        fontWeight: 700,
-                      }}
+                      className="w-24 h-12 px-2 rounded-xl text-base text-center outline-none"
+                      style={{ background: 'var(--bg)', border: '1.5px solid #FECACA', color: 'var(--text-primary)' }}
                     />
-                    <div
-                      className="px-2 py-2 rounded-xl text-sm text-center font-extrabold"
-                      style={{ background: '#EEF2FF', color: '#4F46E5' }}
-                    >
-                      {net.toFixed(1)}
-                    </div>
-                    {isManual && (
-                      <button
-                        onClick={() => removeRow(i)}
-                        className="w-8 h-8 flex items-center justify-center rounded-xl text-sm hover:opacity-80 transition-opacity"
-                        style={{ background: '#FEF2F2', color: '#EF4444' }}
-                      >
-                        ✕
-                      </button>
-                    )}
                   </div>
                 )
               })}
             </div>
-
-            {isManual && (
-              <button
-                onClick={addManualRow}
-                className="mt-3 w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
-                style={{
-                  background: 'var(--bg)',
-                  border: '2px dashed var(--border)',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                + Ders Ekle
-              </button>
-            )}
-          </div>
-
-          {error && (
-            <p className="text-sm font-semibold px-4 py-3 rounded-xl" style={{ background: '#FEF2F2', color: '#EF4444' }}>
-              ⚠️ {error}
-            </p>
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div
-          className="px-6 py-5 flex items-center justify-between gap-3"
-          style={{ borderTop: '2px solid var(--border)' }}
+        <button
+          onClick={save}
+          disabled={saving}
+          className="w-full py-4 rounded-xl text-base font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+          style={{ background: 'var(--primary)' }}
         >
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-              Toplam Net
-            </p>
-            <p className="text-4xl font-extrabold" style={{ color: 'var(--primary)' }}>
-              {totalNet.toFixed(2)}
-            </p>
+          {saving ? 'Kaydediliyor...' : '💾 Deneme Sonucunu Kaydet'}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ─── Net özeti ────────────────────────────────────────────────────────────────
+
+function NetSummary({ exams, typeName }: { exams: ExamRecord[]; typeName: string }) {
+  const nets = exams.map((e) => e.totalNet)
+  const max = Math.max(...nets)
+  const min = Math.min(...nets)
+  const avg = nets.reduce((a, b) => a + b, 0) / nets.length
+  const boxes = [
+    { label: 'En Yüksek', value: max, arrow: '↑', color: '#10B981' },
+    { label: 'En Düşük', value: min, arrow: '↓', color: '#EF4444' },
+    { label: 'Ortalama', value: avg, arrow: '→', color: '#3B82F6' },
+  ]
+  return (
+    <div className="rounded-2xl p-6" style={{ background: '#4F46E514', border: '1.5px solid #4F46E540' }}>
+      <p className="text-lg font-extrabold mb-4" style={{ color: 'var(--text-primary)' }}>📊 {typeName} — Net Özeti</p>
+      <div className="grid grid-cols-3 gap-3">
+        {boxes.map((b) => (
+          <div key={b.label} className="rounded-xl py-4 text-center" style={{ background: `${b.color}1A` }}>
+            <p className="text-xl font-extrabold" style={{ color: b.color }}>{b.arrow} {b.value.toFixed(1)}</p>
+            <p className="text-base mt-1" style={{ color: 'var(--text-secondary)' }}>{b.label}</p>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="px-5 py-3 rounded-2xl text-sm font-semibold"
-              style={{
-                background: 'var(--bg)',
-                color: 'var(--text-secondary)',
-                border: '2px solid var(--border)',
-              }}
-            >
-              İptal
-            </button>
-            <button
-              onClick={save}
-              disabled={saving}
-              className="px-6 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-60 transition-all hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
-            >
-              {saving ? '⏳ Kaydediliyor...' : '💾 Kaydet'}
-            </button>
-          </div>
-        </div>
+        ))}
       </div>
     </div>
+  )
+}
+
+// ─── Trend grafiği ────────────────────────────────────────────────────────────
+
+function TrendChart({ exams }: { exams: ExamRecord[] }) {
+  const sorted = sortByDate(exams)
+  let running = 0
+  const data = sorted.map((e, i) => {
+    running += e.totalNet
+    return {
+      label: shortDate(e.date),
+      net: parseFloat(e.totalNet.toFixed(1)),
+      level: parseFloat((running / (i + 1)).toFixed(1)),
+      title: e.title || examTypeDisplayName(e.type),
+    }
+  })
+  const avg = sorted.reduce((s, e) => s + e.totalNet, 0) / sorted.length
+
+  return (
+    <div className="rounded-2xl p-6" style={{ background: '#10B98114', border: '1.5px solid #10B98140' }}>
+      <p className="text-lg font-extrabold mb-1" style={{ color: 'var(--text-primary)' }}>📈 Net Trend</p>
+      <div className="flex gap-5 mb-4 text-base" style={{ color: 'var(--text-secondary)' }}>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-4 h-1 rounded" style={{ background: '#4F46E5' }} /> Gerçek Net</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-4 h-0.5 rounded" style={{ background: '#9CA3AF' }} /> Kayan Ortalama</span>
+      </div>
+      <div style={{ width: '100%', height: 240 }}>
+        <ResponsiveContainer>
+          <LineChart data={data} margin={{ top: 10, right: 20, bottom: 10, left: -10 }}>
+            <CartesianGrid stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 12, fill: 'var(--text-hint)' }} />
+            <YAxis tick={{ fontSize: 12, fill: 'var(--text-hint)' }} />
+            <Tooltip
+              contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}
+              formatter={(v, name) => [v as number, name === 'net' ? 'Gerçek Net' : 'Seviye']}
+            />
+            <Line type="monotone" dataKey="net" stroke="#4F46E5" strokeWidth={3} dot={{ r: 5, fill: '#4F46E5' }} />
+            <Line type="monotone" dataKey="level" stroke="#9CA3AF" strokeWidth={2} strokeDasharray="6 4" dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="text-base mt-2" style={{ color: 'var(--text-hint)' }}>Genel ortalama: {avg.toFixed(1)} Net</p>
+    </div>
+  )
+}
+
+// ─── Denge radarı ─────────────────────────────────────────────────────────────
+
+function RadarCard({ exams, typeInfo }: { exams: ExamRecord[]; typeInfo: ExamTypeInfo }) {
+  const last3 = sortByDate(exams).slice(-3)
+  const lessons = typeInfo.lessons
+  const [selectedLesson, setSelectedLesson] = useState(0)
+
+  function shortLesson(name: string): string {
+    return name.replace(/^(TYT|AYT) /, '')
+  }
+
+  // Recharts radar verisi: her ders bir satır, her deneme bir alan
+  const data = lessons.map((l) => {
+    const row: Record<string, number | string> = { lesson: shortLesson(l.name) }
+    last3.forEach((e, i) => {
+      row[`exam${i}`] = detailNet(e, l.name)
+    })
+    return row
+  })
+
+  const activeLesson = lessons[selectedLesson]
+
+  return (
+    <div className="rounded-2xl p-6" style={{ background: '#F59E0B14', border: '1.5px solid #F59E0B40' }}>
+      <p className="text-lg font-extrabold mb-3" style={{ color: 'var(--text-primary)' }}>
+        🎯 {typeInfo.displayName} Denge Radarı
+      </p>
+      <div className="flex flex-wrap gap-4 mb-3">
+        {last3.map((e, i) => (
+          <span key={e.id} className="flex items-center gap-1.5 text-base" style={{ color: 'var(--text-secondary)' }}>
+            <span className="inline-block w-3 h-3 rounded-full" style={{ background: CHART_COLORS[i] }} />
+            {(e.title || `Deneme ${i + 1}`)} ({shortDate(e.date)})
+          </span>
+        ))}
+      </div>
+      <div style={{ width: '100%', height: 300 }}>
+        <ResponsiveContainer>
+          <RadarChart data={data} outerRadius="75%">
+            <PolarGrid stroke="var(--border)" />
+            <PolarAngleAxis dataKey="lesson" tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} />
+            {/* Eksen sayıları gizli — net bilgisi alttaki satırlarda */}
+            <PolarRadiusAxis tick={false} axisLine={false} />
+            {last3.map((e, i) => (
+              <Radar
+                key={e.id}
+                name={e.title || `Deneme ${i + 1}`}
+                dataKey={`exam${i}`}
+                stroke={CHART_COLORS[i]}
+                fill={CHART_COLORS[i]}
+                fillOpacity={0.25}
+              />
+            ))}
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Ders seçim chip'leri */}
+      <div className="flex flex-wrap gap-2 mt-4">
+        {lessons.map((l, i) => (
+          <button
+            key={l.name}
+            onClick={() => setSelectedLesson(i)}
+            className="px-4 py-2 rounded-full text-base font-semibold transition-all"
+            style={{
+              background: selectedLesson === i ? '#1F2937' : 'var(--bg)',
+              color: selectedLesson === i ? '#fff' : 'var(--text-secondary)',
+            }}
+          >
+            {shortLesson(l.name)}
+          </button>
+        ))}
+      </div>
+
+      {/* Seçili dersin denemelere göre netleri */}
+      <div className="space-y-2 mt-4">
+        {last3.map((e, i) => (
+          <div
+            key={e.id}
+            className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
+            style={{ background: `${CHART_COLORS[i]}1A`, border: `1px solid ${CHART_COLORS[i]}59` }}
+          >
+            <span className="w-3 h-3 rounded-full shrink-0" style={{ background: CHART_COLORS[i] }} />
+            <span className="flex-1 text-base font-semibold" style={{ color: CHART_COLORS[i] }}>
+              {(e.title || `Deneme ${i + 1}`)} ({shortDate(e.date)})
+            </span>
+            <span className="text-base font-bold" style={{ color: CHART_COLORS[i] }}>
+              {detailNet(e, activeLesson.name).toFixed(1)} net
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Koç analizi ──────────────────────────────────────────────────────────────
+
+interface Insight {
+  text: string
+  isPositive: boolean
+}
+
+function CoachCard({ exams }: { exams: ExamRecord[] }) {
+  const sorted = sortByDate(exams)
+  const last3 = sorted.slice(-3)
+  const lessons = new Set<string>()
+  last3.forEach((e) => e.details.forEach((d) => d.lessonName && lessons.add(d.lessonName)))
+
+  const insights: Insight[] = []
+  for (const lesson of lessons) {
+    const nets = last3.map((e) => detailNet(e, lesson))
+    if (nets.length < 2) continue
+    const netStr = nets.map((n) => n.toFixed(1)).join(' → ')
+    if (nets.length >= 3 && nets[0] < nets[1] && nets[1] < nets[2]) {
+      insights.push({ text: `🎉 ${lesson} netiniz son 3 denemede sürekli artıyor (${netStr}). Harika ilerleme, böyle devam!`, isPositive: true })
+    } else if (nets[nets.length - 1] > nets[0]) {
+      insights.push({ text: `📈 ${lesson} netiniz artış gösterdi (${netStr}). İyi gidiyorsunuz, devam et!`, isPositive: true })
+    } else if (nets[nets.length - 1] < nets[0]) {
+      insights.push({ text: `📉 ${lesson} netiniz düşüş gösterdi (${netStr}). Bu derse daha fazla vakit ayırmanı öneririz.`, isPositive: false })
+    }
+  }
+
+  if (insights.length === 0) return null
+
+  return (
+    <div className="rounded-2xl p-6" style={{ background: '#0EA5E914', border: '1.5px solid #0EA5E940' }}>
+      <p className="text-lg font-extrabold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+        🎓 Koç Analizi
+      </p>
+      <div className="space-y-2.5">
+        {insights.map((ins, i) => (
+          <div
+            key={i}
+            className="px-4 py-3 rounded-xl text-base leading-relaxed"
+            style={{
+              background: ins.isPositive ? '#10B98120' : '#EF444420',
+              border: `1px solid ${ins.isPositive ? '#10B98140' : '#EF444440'}`,
+              color: ins.isPositive ? 'var(--success-text)' : 'var(--danger-text)',
+            }}
+          >
+            {ins.text}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Deneme karşılaştırması ───────────────────────────────────────────────────
+
+function ComparisonModal({ exams, typeInfo, onClose }: {
+  exams: ExamRecord[]
+  typeInfo: ExamTypeInfo | null
+  onClose: () => void
+}) {
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const sortedAll = sortByDate(exams)
+  const selected = sortByDate(exams.filter((e) => selectedIds.includes(e.id)))
+
+  function toggle(id: number) {
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id)
+      if (prev.length < 3) return [...prev, id]
+      return prev
+    })
+  }
+
+  const nets = selected.map((e) => e.totalNet)
+  let trendText: string | null = null
+  let trendUp = true
+  if (nets.length >= 2) {
+    const diff = nets[nets.length - 1] - nets[0]
+    trendUp = diff >= 0
+    trendText = trendUp
+      ? `Seçtiğin denemeler arasında toplam netinde +${diff.toFixed(1)} artış var. Harika gidiyorsun! 🚀`
+      : `Seçtiğin denemeler arasında toplam netinde ${diff.toFixed(1)} düşüş var. Daha çok çalış. 💪`
+  }
+
+  // Ders bazlı karşılaştırma
+  const lessons = typeInfo?.lessons ?? []
+
+  return (
+    <ModalShell title="📊 Deneme Karşılaştırması" subtitle="Karşılaştırmak için max 3 deneme seç" onClose={onClose}>
+      <div className="flex gap-3 overflow-x-auto pb-2 mb-5">
+        {sortedAll.map((e) => {
+          const idx = selectedIds.indexOf(e.id)
+          const isSel = idx !== -1
+          return (
+            <button
+              key={e.id}
+              onClick={() => toggle(e.id)}
+              className="shrink-0 w-32 p-3 rounded-xl text-center transition-all"
+              style={{
+                background: isSel ? 'var(--primary)' : 'var(--bg)',
+                border: `2px solid ${isSel ? 'var(--primary)' : 'var(--border)'}`,
+              }}
+            >
+              {isSel && <p className="text-lg font-extrabold text-white">{idx + 1}</p>}
+              <p className="text-base font-semibold truncate" style={{ color: isSel ? '#fff' : 'var(--text-primary)' }}>
+                {e.title || examTypeDisplayName(e.type)}
+              </p>
+              <p className="text-base mt-0.5" style={{ color: isSel ? 'rgba(255,255,255,0.7)' : 'var(--text-hint)' }}>
+                {fmtDate(e.date)}
+              </p>
+            </button>
+          )
+        })}
+      </div>
+
+      {selected.length < 2 ? (
+        <p className="text-base text-center py-6" style={{ color: 'var(--text-hint)' }}>
+          Karşılaştırmak için en az 2 deneme seç.
+        </p>
+      ) : (
+        <div className="space-y-5">
+          {trendText && (
+            <div
+              className="px-4 py-3 rounded-xl text-base"
+              style={{ background: trendUp ? '#E8F5E9' : '#FFEBEE', color: trendUp ? '#2E7D32' : '#C62828' }}
+            >
+              {trendText}
+            </div>
+          )}
+
+          {/* Toplam net grafiği */}
+          <div>
+            <p className="text-base font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Toplam Net Karşılaştırması</p>
+            <div style={{ width: '100%', height: 200 }}>
+              <ResponsiveContainer>
+                <LineChart
+                  data={selected.map((e, i) => ({
+                    label: e.title || shortDate(e.date),
+                    net: parseFloat(e.totalNet.toFixed(1)),
+                    idx: i,
+                  }))}
+                  margin={{ top: 10, right: 20, bottom: 10, left: -10 }}
+                >
+                  <CartesianGrid stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-hint)' }} />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--text-hint)' }} />
+                  <Tooltip
+                    contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}
+                    formatter={(v) => [v as number, 'Net']}
+                  />
+                  <Line type="monotone" dataKey="net" stroke="#F59E0B" strokeWidth={3} dot={{ r: 6, fill: '#F59E0B' }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Toplam net kutucukları */}
+          <div className="flex gap-3">
+            {selected.map((e, i) => (
+              <div key={e.id} className="flex-1 rounded-xl py-3 text-center" style={{ background: `${CHART_COLORS[i]}1A` }}>
+                <p className="text-xl font-extrabold" style={{ color: CHART_COLORS[i] }}>{e.totalNet.toFixed(1)}</p>
+                <p className="text-base" style={{ color: 'var(--text-secondary)' }}>{shortDate(e.date)}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Ders bazlı net — çubuk karşılaştırma */}
+          {lessons.length > 0 && (
+            <div>
+              <p className="text-base font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Ders Bazlı Net</p>
+              <div className="space-y-3">
+                {lessons.map((l) => {
+                  const maxN = Math.max(1, ...selected.map((e) => detailNet(e, l.name)), l.maxQuestions)
+                  return (
+                    <div key={l.name}>
+                      <p className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{l.name}</p>
+                      <div className="space-y-1">
+                        {selected.map((e, i) => {
+                          const net = detailNet(e, l.name)
+                          return (
+                            <div key={e.id} className="flex items-center gap-2">
+                              <div className="flex-1 h-5 rounded-full overflow-hidden" style={{ background: 'var(--bg)' }}>
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{ width: `${(net / maxN) * 100}%`, background: CHART_COLORS[i] }}
+                                />
+                              </div>
+                              <span className="w-12 text-right text-base font-bold" style={{ color: CHART_COLORS[i] }}>
+                                {net.toFixed(1)}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </ModalShell>
+  )
+}
+
+// ─── Deneme kartı ─────────────────────────────────────────────────────────────
+
+function ExamCard({ exam, onEdit, onDelete }: {
+  exam: ExamRecord
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div
+      className="flex items-center gap-4 p-5 rounded-2xl"
+      style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
+    >
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white text-xl shrink-0" style={{ background: 'var(--primary)' }}>
+        ✓
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-base font-bold truncate" style={{ color: 'var(--text-primary)' }}>
+          {exam.title || examTypeDisplayName(exam.type)}
+        </p>
+        <p className="text-base" style={{ color: 'var(--text-hint)' }}>{fmtDate(exam.date)}</p>
+      </div>
+      <span
+        className="px-3 py-1.5 rounded-full text-base font-bold"
+        style={{ background: '#DCFCE7', color: '#166534' }}
+      >
+        {exam.totalNet.toFixed(1)} Net
+      </span>
+      <button onClick={onEdit} className="text-xl" style={{ color: '#3B82F6' }} title="Düzenle">✏️</button>
+      <button onClick={onDelete} className="text-xl" style={{ color: '#EF4444' }} title="Sil">🗑️</button>
+    </div>
+  )
+}
+
+// ─── BRANS bölümü — ders adına göre gruplanmış denemeler için ────────────────
+// Her ders kendi NetSummary + TrendChart + CoachCard + karşılaştırma + geçmiş
+// listesine sahip olur. Mobildeki _BransLessonSection'la birebir aynı davranır.
+
+function BransLessonSection({ lessonName, exams, onEdit, onDelete, onCompare }: {
+  lessonName: string
+  exams: ExamRecord[]
+  onEdit: (e: ExamRecord) => void
+  onDelete: (id: number) => void
+  onCompare: () => void
+}) {
+  const sorted = sortByDate(exams)
+  return (
+    <div>
+      {/* Bölüm başlığı */}
+      <div className="flex items-center gap-3 mb-4">
+        <span className="inline-block w-1 h-6 rounded-sm" style={{ background: 'var(--primary)' }} />
+        <h2 className="text-xl font-extrabold flex-1" style={{ color: 'var(--text-primary)' }}>
+          Branş — {lessonName}
+        </h2>
+        <span className="text-sm" style={{ color: 'var(--text-hint)' }}>
+          {exams.length} deneme
+        </span>
+      </div>
+
+      <div className="space-y-6">
+        <NetSummary exams={exams} typeName={lessonName} />
+
+        {sorted.length >= 2 ? (
+          <TrendChart exams={sorted} />
+        ) : (
+          <div className="rounded-2xl p-5 flex items-center gap-3" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+            <span className="text-xl">ℹ️</span>
+            <span className="text-base" style={{ color: 'var(--text-secondary)' }}>
+              Net Trend grafiği için en az 2 deneme gerekli.
+            </span>
+          </div>
+        )}
+
+        {sorted.length >= 3 && <CoachCard exams={sorted} />}
+
+        {sorted.length >= 2 && (
+          <div className="flex justify-center">
+            <button
+              onClick={onCompare}
+              className="w-1/2 py-4 rounded-xl text-lg font-bold text-white transition-all hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, #F59E0B, #F97316)' }}
+            >
+              ⇄ Deneme Karşılaştırması Yap
+            </button>
+          </div>
+        )}
+
+        <section>
+          <h3 className="text-lg font-extrabold mb-2" style={{ color: 'var(--text-primary)' }}>Geçmiş Denemeler</h3>
+          <div className="space-y-3">
+            {sorted.slice().reverse().map((e) => (
+              <ExamCard
+                key={e.id}
+                exam={e}
+                onEdit={() => onEdit(e)}
+                onDelete={() => onDelete(e.id)}
+              />
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+// ─── Ana sayfa ─────────────────────────────────────────────────────────────────
+
+export default function DenemelorPage() {
+  const { profile } = useUserProfile()
+  const [allExams, setAllExams] = useState<ExamRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filterType, setFilterType] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [editExam, setEditExam] = useState<ExamRecord | null>(null)
+  const [showCompare, setShowCompare] = useState(false)
+  // Karşılaştırma için gönderilecek deneme alt-kümesi (BRANS gruplarında ders bazlı).
+  const [compareExams, setCompareExams] = useState<ExamRecord[]>([])
+  const [deleteId, setDeleteId] = useState<number | null>(null)
+
+  const localData = useMemo(() => {
+    const uid = getUserId()
+    return uid ? getOnboardingData(uid) : null
+  }, [])
+
+  const types = useMemo(() => {
+    const targetExam = profile?.targetExam || localData?.targetExam || ''
+    const selectedArea = profile?.selectedArea || localData?.selectedArea || ''
+    return availableExamTypes(targetExam, selectedArea)
+  }, [profile, localData])
+
+  const branchLessons = useMemo(() => bransBranchLessons(types), [types])
+
+  function load() {
+    setLoading(true)
+    denemeService.getAll().then(setAllExams).catch(() => {}).finally(() => setLoading(false))
+  }
+  useEffect(() => { load() }, [])
+
+  // Mevcut deneme türleri (gerçekte kayıtlı olanlar)
+  const presentTypes = useMemo(() => {
+    const set = new Set(allExams.map((e) => e.type).filter(Boolean))
+    return [...set].sort()
+  }, [allExams])
+
+  const effectiveFilter = filterType ?? presentTypes[0] ?? null
+  const filtered = effectiveFilter ? allExams.filter((e) => e.type === effectiveFilter) : allExams
+  const isBrans = effectiveFilter === 'BRANS'
+  const selectedTypeInfo = !isBrans && effectiveFilter
+    ? examTypes.find((t) => t.apiType === effectiveFilter) ?? null
+    : null
+
+  async function handleDelete(id: number) {
+    try {
+      await denemeService.delete(id)
+      setAllExams((prev) => prev.filter((e) => e.id !== id))
+    } catch {}
+    setDeleteId(null)
+  }
+
+  return (
+    <>
+      <div className="min-h-full pb-24">
+        {/* Header */}
+        <div
+          className="px-8 sm:px-10 pt-10 pb-16 flex items-center justify-between gap-6"
+          style={{ background: 'linear-gradient(135deg, #C0392B, #E74C3C)', minHeight: '232px' }}
+        >
+          <div>
+            <h1 className="text-4xl sm:text-5xl font-extrabold text-white">📝 Denemelerim</h1>
+            <p className="text-white/80 text-lg mt-2">
+              Deneme sınavlarını takip et, trendini gör, gelişimini ölç.
+            </p>
+          </div>
+          <button
+            onClick={() => { setEditExam(null); setShowForm(true) }}
+            className="shrink-0 flex items-center gap-2 px-7 h-14 rounded-xl text-base font-bold text-white transition-all hover:opacity-90"
+            style={{ background: 'rgba(0,0,0,0.55)' }}
+          >
+            <span className="text-2xl">+</span> Deneme Sonucu Ekle
+          </button>
+        </div>
+
+        <div className="px-8 sm:px-10 pt-8 space-y-8 sm:space-y-12">
+          {loading ? (
+            <div className="h-40 rounded-2xl animate-pulse" style={{ background: 'var(--bg)' }} />
+          ) : allExams.length === 0 ? (
+            <div className="text-center py-20 rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+              <p className="text-6xl mb-4">📝</p>
+              <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Henüz deneme eklenmedi</p>
+              <p className="text-base mt-1" style={{ color: 'var(--text-hint)' }}>
+                "Deneme Sonucu Ekle" butonuna tıklayarak ilk denemeni gir.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Tür filtreleri */}
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {presentTypes.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setFilterType(t)}
+                    className="shrink-0 px-5 py-2.5 rounded-full text-base font-bold transition-all"
+                    style={{
+                      background: effectiveFilter === t ? 'var(--primary)' : 'var(--card)',
+                      color: effectiveFilter === t ? '#fff' : 'var(--text-secondary)',
+                      border: `1.5px solid ${effectiveFilter === t ? 'var(--primary)' : 'var(--border)'}`,
+                    }}
+                  >
+                    {examTypeDisplayName(t)}
+                  </button>
+                ))}
+              </div>
+
+              {/* BRANS: ders adına göre gruplanmış bölümler — her ders ayrı net özeti,
+                  trend, koç analizi, karşılaştırma ve geçmiş listesi alır. */}
+              {isBrans ? (
+                (() => {
+                  // Ders adına göre grupla (ilk detail.lessonName)
+                  const groups = new Map<string, ExamRecord[]>()
+                  for (const e of filtered) {
+                    const lessonName = e.details?.[0]?.lessonName ?? 'Diğer'
+                    if (!groups.has(lessonName)) groups.set(lessonName, [])
+                    groups.get(lessonName)!.push(e)
+                  }
+                  const groupArr = [...groups.entries()]
+                  return (
+                    <div className="space-y-10">
+                      {groupArr.map(([lessonName, groupExams]) => (
+                        <BransLessonSection
+                          key={lessonName}
+                          lessonName={lessonName}
+                          exams={groupExams}
+                          onEdit={(e) => { setEditExam(e); setShowForm(true) }}
+                          onDelete={(id) => setDeleteId(id)}
+                          onCompare={() => { setCompareExams(groupExams); setShowCompare(true) }}
+                        />
+                      ))}
+                    </div>
+                  )
+                })()
+              ) : (
+                <>
+                  {filtered.length > 0 && (
+                    <NetSummary exams={filtered} typeName={examTypeDisplayName(effectiveFilter ?? '')} />
+                  )}
+
+                  {filtered.length >= 2 ? (
+                    <TrendChart exams={filtered} />
+                  ) : (
+                    <div className="rounded-2xl p-5 flex items-center gap-3" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                      <span className="text-xl">ℹ️</span>
+                      <span className="text-base" style={{ color: 'var(--text-secondary)' }}>
+                        Net Trend grafiği için en az 2 deneme gerekli.
+                      </span>
+                    </div>
+                  )}
+
+                  {filtered.length > 0 && selectedTypeInfo && selectedTypeInfo.lessons.length >= 3 && (
+                    <RadarCard exams={filtered} typeInfo={selectedTypeInfo} />
+                  )}
+
+                  {filtered.length >= 3 && <CoachCard exams={filtered} />}
+
+                  {filtered.length >= 2 && (
+                    <div className="flex justify-center">
+                      <button
+                        onClick={() => { setCompareExams(filtered); setShowCompare(true) }}
+                        className="w-1/2 py-4 rounded-xl text-lg font-bold text-white transition-all hover:opacity-90"
+                        style={{ background: 'linear-gradient(135deg, #F59E0B, #F97316)' }}
+                      >
+                        ⇄ Deneme Karşılaştırması Yap
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Geçmiş denemeler */}
+                  <section>
+                    <h2 className="text-2xl font-extrabold mb-3" style={{ color: 'var(--text-primary)' }}>Geçmiş Denemeler</h2>
+                    <div className="space-y-3">
+                      {sortByDate(filtered).reverse().map((e) => (
+                        <ExamCard
+                          key={e.id}
+                          exam={e}
+                          onEdit={() => { setEditExam(e); setShowForm(true) }}
+                          onDelete={() => setDeleteId(e.id)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {showForm && (
+        <ExamFormModal
+          existing={editExam}
+          availableTypes={types}
+          branchLessons={branchLessons}
+          onClose={() => { setShowForm(false); setEditExam(null) }}
+          onSaved={load}
+        />
+      )}
+      {showCompare && (
+        <ComparisonModal
+          exams={compareExams.length > 0 ? compareExams : filtered}
+          typeInfo={selectedTypeInfo}
+          onClose={() => { setShowCompare(false); setCompareExams([]) }}
+        />
+      )}
+      {deleteId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="w-full max-w-md rounded-3xl p-7" style={{ background: 'var(--card)' }}>
+            <h4 className="text-xl font-extrabold mb-2" style={{ color: 'var(--text-primary)' }}>Denemeyi Sil</h4>
+            <p className="text-base mb-6" style={{ color: 'var(--text-secondary)' }}>
+              Bu deneme sonucunu silmek istediğine emin misin?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteId(null)}
+                className="flex-1 py-3.5 rounded-xl text-base font-semibold"
+                style={{ background: 'var(--bg)', color: 'var(--text-secondary)', border: '1.5px solid var(--border)' }}
+              >
+                İptal
+              </button>
+              <button
+                onClick={() => handleDelete(deleteId)}
+                className="flex-1 py-3.5 rounded-xl text-base font-bold text-white"
+                style={{ background: '#EF4444' }}
+              >
+                Sil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

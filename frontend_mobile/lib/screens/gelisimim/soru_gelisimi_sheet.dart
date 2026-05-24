@@ -132,6 +132,9 @@ class _SoruGelisimiSheetState extends ConsumerState<SoruGelisimiSheet> {
       ref.invalidate(gelisimimStatsProvider('today'));
       ref.invalidate(lessonDistributionProvider('all'));
       ref.invalidate(lessonDistributionProvider('today'));
+      // Tüm Zamanlar günlere göre soru gruplaması ve XP de tazelenmeli
+      ref.invalidate(questionsByDayProvider);
+      ref.invalidate(xpInfoProvider);
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(

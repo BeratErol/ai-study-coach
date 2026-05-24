@@ -1,17 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { clearToken, getUserName } from '../hooks/useAuth'
-import { useUserProfile } from '../hooks/useUserProfile'
-import { getSubjectsForExam } from '../data/subjectsData'
-import api from '../services/api'
-import { gelisimimService, type XpInfo } from '../services/gelisimimService'
-import { getQuickNotes, saveQuickNotes, type QuickNote } from '../services/localData'
+import { clearToken } from '../hooks/useAuth'
 import { getUserId } from '../services/tokenService'
-import { getOnboardingData, saveOnboardingData } from '../services/userPrefsService'
-import { generateAndStorePlan } from '../services/studyPlanLocal'
-import { defaultOnboardingData } from '../models/OnboardingData'
+import api from '../services/api'
+import { getSubjectsForExam, type SubjectData } from '../data/subjectsData'
+import {
+  getOnboardingData, saveOnboardingData,
+  getExamGoal, saveExamGoal, type ExamGoal,
+} from '../services/userPrefsService'
+import { generateAndStorePlan, getTodayPlan } from '../services/studyPlanLocal'
+import {
+  getQuickNotes, saveQuickNotes, type QuickNote,
+  saveTopicAssignments, saveCompletedTaskIds, saveCompletedLessons,
+  getCompletedTaskIds, getCompletedLessons,
+} from '../services/localData'
+import { defaultOnboardingData, type OnboardingData } from '../models/OnboardingData'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Yardımcılar ──────────────────────────────────────────────────────────────
 
 function daysUntil(dateStr: string | null | undefined): number | null {
   if (!dateStr) return null
@@ -20,81 +25,1021 @@ function daysUntil(dateStr: string | null | undefined): number | null {
   now.setHours(0, 0, 0, 0)
   d.setHours(0, 0, 0, 0)
   const diff = Math.round((d.getTime() - now.getTime()) / 86400000)
-  return diff >= 0 ? diff : null
+  return diff > 0 ? diff : null
 }
 
-function Skeleton({ className }: { className?: string }) {
+const EDU_LABELS: Record<string, string> = {
+  ortaokul: 'Ortaokul',
+  lise: 'Lise',
+  universite: 'Üniversite / Mezun',
+}
+
+const DAY_LABELS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cts', 'Paz']
+
+// Aynı içerikli dizi mi? (sıra önemsiz)
+function sameSet(a: string[] = [], b: string[] = []): boolean {
+  if (a.length !== b.length) return false
+  const sa = new Set(a), sb = new Set(b)
+  for (const x of sa) if (!sb.has(x)) return false
+  return true
+}
+
+/**
+ * Sınav türü / alan / ders havuzu değişti mi?
+ * Değiştiyse bugüne ait konu atamaları + tamamlanan dersler artık geçersiz —
+ * yeni programın id'leriyle eşleşmez, sıfırlanmalı.
+ */
+function isSubjectShapeChanged(prev: OnboardingData, next: OnboardingData): boolean {
   return (
-    <div
-      className={`animate-pulse rounded-xl ${className ?? ''}`}
-      style={{ background: 'var(--border)' }}
-    />
+    prev.targetExam !== next.targetExam ||
+    prev.selectedArea !== next.selectedArea ||
+    !sameSet(prev.strongSubjects, next.strongSubjects) ||
+    !sameSet(prev.weakSubjects, next.weakSubjects) ||
+    !sameSet(prev.customSubjects ?? [], next.customSubjects ?? [])
   )
 }
 
-// ─── Section Card ─────────────────────────────────────────────────────────────
+function todayStrLocal(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
-function SectionCard({
-  title,
-  children,
-  action,
-}: {
-  title: React.ReactNode
+// ─── Profil güncelleme yardımcısı ─────────────────────────────────────────────
+// localStorage'ı günceller, planı yeniden üretir, backend'e senkronlar.
+// Sınav/alan/ders havuzu değiştiyse bugüne ait konu atamaları + tamamlananları
+// sıfırlar (eski blok id'leri yeni planla eşleşmez). Sadece saat/biyoritim
+// değişikliklerinde tamamlananlar korunur.
+async function persistProfile(patch: Partial<OnboardingData>): Promise<OnboardingData | null> {
+  const userId = getUserId()
+  if (!userId) return null
+  const current = getOnboardingData(userId) ?? { ...defaultOnboardingData }
+  const updated: OnboardingData = { ...current, ...patch }
+
+  const shapeChanged = isSubjectShapeChanged(current, updated)
+
+  saveOnboardingData(userId, updated)
+  generateAndStorePlan(userId, updated)
+
+  if (shapeChanged) {
+    // Yeni planın id'leri farklı — eski atamalar ve tamamlananlar geçersiz.
+    // Bugüne ait olanları sıfırla; geçmiş günler korunur.
+    saveTopicAssignments({})
+    saveCompletedTaskIds(new Set())
+    saveCompletedLessons(todayStrLocal(), [])
+  } else {
+    // Sadece saat değişti — plan yine yenilendi ama ders havuzu aynı.
+    // Yeni planda artık bulunmayan blok id'leri (ders programdan çıkmış olabilir)
+    // için tamamlama kayıtlarını sil — yanıltıcı görünmesin.
+    const todayStr = todayStrLocal()
+    const today = getTodayPlan()
+    const validIds = new Set((today?.blocks ?? []).map((b) => b.id))
+    // completed_tasks bugünkü id'lerini filtrele
+    const cur = getCompletedTaskIds()
+    const trimmed = new Set([...cur].filter((id) => validIds.has(id)))
+    if (trimmed.size !== cur.size) saveCompletedTaskIds(trimmed)
+    // completed_lessons bugünün detaylarını filtrele
+    const lessons = getCompletedLessons(todayStr)
+    const lessonsTrimmed = lessons.filter((l) => validIds.has(l.id))
+    if (lessonsTrimmed.length !== lessons.length) {
+      saveCompletedLessons(todayStr, lessonsTrimmed)
+    }
+  }
+
+  try {
+    await api.post('/UserProfile', updated)
+  } catch {
+    // backend senkronu kritik değil
+  }
+  return updated
+}
+
+// ─── Accordion bölümü ─────────────────────────────────────────────────────────
+
+function Section({ icon, title, color, children, defaultOpen }: {
+  icon: string
+  title: string
+  color: string
   children: React.ReactNode
-  action?: React.ReactNode
+  defaultOpen?: boolean
 }) {
+  const [open, setOpen] = useState(defaultOpen ?? false)
   return (
-    <div
-      className="rounded-3xl overflow-hidden shadow-md"
-      style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-    >
-      <div
-        className="px-6 py-5 flex items-center justify-between"
-        style={{ borderBottom: '1px solid var(--border)' }}
+    <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--card)', border: `1.5px solid ${color}40` }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-5 py-4"
+        style={{ background: `${color}14` }}
       >
-        <h2 className="text-xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
-          {title}
-        </h2>
-        {action}
-      </div>
-      <div className="px-6 py-5">{children}</div>
+        <span className="text-2xl">{icon}</span>
+        <span className="flex-1 text-left text-lg font-extrabold" style={{ color }}>{title}</span>
+        <span className="text-lg" style={{ color: 'var(--text-hint)' }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && <div className="px-5 pb-5 pt-1" style={{ borderTop: `1px solid ${color}40` }}>{children}</div>}
     </div>
   )
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+function Toast({ message }: { message: string }) {
+  return (
+    <div
+      className="fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-4 rounded-2xl text-white text-base font-bold shadow-xl z-50"
+      style={{ background: '#10B981' }}
+    >
+      {message}
+    </div>
+  )
+}
+
+// Program yenileme onay modalı
+function ProgramRefreshConfirm({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+      <div className="w-full max-w-md rounded-3xl p-7 text-center" style={{ background: 'var(--card)' }}>
+        <p className="text-5xl mb-3">⚠️</p>
+        <h4 className="text-xl font-extrabold mb-2" style={{ color: 'var(--text-primary)' }}>Program Yenilenecek</h4>
+        <p className="text-base mb-6" style={{ color: 'var(--text-secondary)' }}>
+          Profil bilgilerini güncellediğinde mevcut çalışma programın silinecek ve yeni
+          ayarlarına göre baştan oluşturulacak. Devam etmek istiyor musun?
+        </p>
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-3.5 rounded-xl text-base font-semibold"
+            style={{ background: 'var(--bg)', color: 'var(--text-secondary)', border: '1.5px solid var(--border)' }}
+          >
+            İptal
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-3.5 rounded-xl text-base font-bold text-white"
+            style={{ background: 'var(--primary)' }}
+          >
+            Evet, Yenile
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Notlarım bölümü ──────────────────────────────────────────────────────────
+
+function NotesSection() {
+  const [notes, setNotes] = useState<QuickNote[]>(() => getQuickNotes())
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+
+  function deleteNote(id: string) {
+    const next = notes.filter((x) => x.id !== id)
+    setNotes(next)
+    saveQuickNotes(next)
+    setConfirmId(null)
+  }
+
+  if (notes.length === 0) {
+    return (
+      <div className="text-center py-6">
+        <p className="text-4xl mb-2">📝</p>
+        <p className="text-base font-semibold" style={{ color: 'var(--text-secondary)' }}>Henüz not eklemedin.</p>
+        <p className="text-base mt-1" style={{ color: 'var(--text-hint)' }}>Ana sayfadaki ✏️ butonuyla hızlı not ekle!</p>
+      </div>
+    )
+  }
+  return (
+    <>
+      <div className="space-y-2.5 mt-3">
+        {notes.map((n) => (
+          <div
+            key={n.id}
+            className="flex items-start gap-3 px-4 py-3 rounded-xl"
+            style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>{n.title}</p>
+              <p className="text-base mt-0.5" style={{ color: 'var(--text-secondary)' }}>{n.content}</p>
+            </div>
+            <button
+              onClick={() => setConfirmId(n.id)}
+              className="text-base shrink-0"
+              style={{ color: 'var(--error)' }}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {confirmId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="w-full max-w-sm rounded-3xl p-7 text-center" style={{ background: 'var(--card)' }}>
+            <p className="text-5xl mb-3">🗑️</p>
+            <h4 className="text-xl font-extrabold mb-2" style={{ color: 'var(--text-primary)' }}>Notu Sil</h4>
+            <p className="text-base mb-6" style={{ color: 'var(--text-secondary)' }}>
+              Bu notu silmek istediğine emin misin?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmId(null)}
+                className="flex-1 py-3.5 rounded-xl text-base font-semibold"
+                style={{ background: 'var(--bg)', color: 'var(--text-secondary)', border: '1.5px solid var(--border)' }}
+              >
+                İptal
+              </button>
+              <button
+                onClick={() => deleteNote(confirmId)}
+                className="flex-1 py-3.5 rounded-xl text-base font-bold text-white"
+                style={{ background: 'var(--error)' }}
+              >
+                Sil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ─── Akademik Hedef bölümü (sınav + alan değiştirilebilir) ────────────────────
+
+const EXAMS_BY_LEVEL: Record<string, { emoji: string; name: string; value: string }[]> = {
+  ortaokul: [
+    { emoji: '📋', name: 'LGS', value: 'LGS' },
+    { emoji: '🏫', name: 'Okul Sınavlarım', value: 'OkulSinavi' },
+  ],
+  lise: [
+    { emoji: '🎓', name: 'YKS', value: 'YKS' },
+    { emoji: '🏫', name: 'Okul Sınavlarım', value: 'OkulSinavi' },
+  ],
+  universite: [
+    { emoji: '🏢', name: 'KPSS', value: 'KPSS' },
+    { emoji: '📐', name: 'ALES', value: 'ALES' },
+    { emoji: '🌐', name: 'YDS', value: 'YDS' },
+    { emoji: '👩‍🏫', name: 'Öğretmenlik', value: 'Öğretmenlik' },
+    { emoji: '🏛️', name: 'Okul Sınavlarım', value: 'OkulSinavi' },
+  ],
+}
+
+const AREAS_BY_EXAM: Record<string, { label: string; value: string }[]> = {
+  YKS: [
+    { label: 'Sayısal (MF)', value: 'sayisal' },
+    { label: 'Eşit Ağırlık (TM)', value: 'esit_agirlik' },
+    { label: 'Sözel (TS)', value: 'sozel' },
+    { label: 'Dil', value: 'dil' },
+    { label: 'Sadece TYT', value: 'sadece_tyt' },
+  ],
+  KPSS: [
+    { label: 'KPSS Lisans', value: 'kpss_lisans' },
+    { label: 'KPSS Önlisans', value: 'kpss_onlisans' },
+  ],
+}
+
+function okulSinaviAreas(eduLevel: string): { label: string; value: string }[] {
+  if (eduLevel === 'ortaokul') {
+    return [
+      { label: '5. Sınıf', value: 'sinif_5' }, { label: '6. Sınıf', value: 'sinif_6' },
+      { label: '7. Sınıf', value: 'sinif_7' }, { label: '8. Sınıf', value: 'sinif_8' },
+    ]
+  }
+  if (eduLevel === 'lise') {
+    return [
+      { label: '9. Sınıf', value: 'lise_9' }, { label: '10. Sınıf', value: 'lise_10' },
+      { label: '11-12 Sayısal (MF)', value: 'lise_1112_sayisal' },
+      { label: '11-12 Eşit Ağırlık (EA)', value: 'lise_1112_ea' },
+      { label: '11-12 Sözel (TS)', value: 'lise_1112_sozel' },
+      { label: '11-12 Dil (YDT)', value: 'lise_1112_dil' },
+    ]
+  }
+  return [
+    { label: 'Yazılım / Bilgisayar', value: 'uni_yazilim' }, { label: 'Tıp', value: 'uni_tip' },
+    { label: 'Hukuk', value: 'uni_hukuk' }, { label: 'Psikoloji', value: 'uni_psikoloji' },
+    { label: 'İşletme / Ekonomi', value: 'uni_isletme' }, { label: 'Mühendislik', value: 'uni_muhendislik' },
+    { label: 'Eğitim / Öğretmenlik', value: 'uni_egitim' }, { label: 'Diğer / Kendi Ekle', value: 'uni_diger' },
+  ]
+}
+
+function AkademikHedefSection({ data, onConfirm }: {
+  data: OnboardingData
+  onConfirm: (patch: Partial<OnboardingData>) => void
+}) {
+  const [exam, setExam] = useState(data.targetExam)
+  const [area, setArea] = useState(data.selectedArea)
+
+  const exams = EXAMS_BY_LEVEL[data.educationLevel] ?? EXAMS_BY_LEVEL['lise']
+  const areas = exam === 'OkulSinavi'
+    ? okulSinaviAreas(data.educationLevel)
+    : AREAS_BY_EXAM[exam] ?? null
+
+  const dirty = exam !== data.targetExam || area !== data.selectedArea
+
+  return (
+    <div className="space-y-4 mt-3">
+      <div>
+        <p className="text-base font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Hedef Sınav</p>
+        <div className="flex flex-wrap gap-2">
+          {exams.map((e) => {
+            const sel = exam === e.value
+            return (
+              <button
+                key={e.value}
+                onClick={() => { setExam(e.value); setArea('') }}
+                className="px-4 py-2.5 rounded-xl text-base font-bold transition-all"
+                style={{
+                  background: sel ? 'var(--primary)' : 'var(--bg)',
+                  color: sel ? '#fff' : 'var(--text-secondary)',
+                  border: `1.5px solid ${sel ? 'var(--primary)' : 'var(--border)'}`,
+                }}
+              >
+                {sel ? '✓ ' : ''}{e.emoji} {e.name}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {areas && (
+        <div>
+          <p className="text-base font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Alanınız Nedir?</p>
+          <div className="flex flex-wrap gap-2">
+            {areas.map((a) => {
+              const sel = area === a.value
+              return (
+                <button
+                  key={a.value}
+                  onClick={() => setArea(a.value)}
+                  className="px-4 py-2.5 rounded-xl text-base font-bold transition-all"
+                  style={{
+                    background: sel ? '#F97316' : 'var(--bg)',
+                    color: sel ? '#fff' : 'var(--text-secondary)',
+                    border: `1.5px solid ${sel ? '#F97316' : 'var(--border)'}`,
+                  }}
+                >
+                  {sel ? '✓ ' : ''}{a.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {dirty && (
+        <button
+          onClick={() => onConfirm({
+            targetExam: exam,
+            selectedArea: area,
+            strongSubjects: [],
+            weakSubjects: [],
+            customSubjects: [],
+          })}
+          className="w-full py-3.5 rounded-xl text-base font-bold text-white transition-all hover:opacity-90"
+          style={{ background: 'var(--primary)' }}
+        >
+          ✅ Onayla
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── Ders Profilim bölümü ─────────────────────────────────────────────────────
+
+function DersProfilimSection({ data, onRequestSave }: {
+  data: OnboardingData
+  onRequestSave: (patch: Partial<OnboardingData>, successMsg: string) => void
+}) {
+  const [strong, setStrong] = useState<string[]>(data.strongSubjects)
+  const [weak, setWeak] = useState<string[]>(data.weakSubjects)
+  const [customSubjects, setCustomSubjects] = useState<string[]>(data.customSubjects ?? [])
+  const [newSubject, setNewSubject] = useState('')
+  const [dirty, setDirty] = useState(false)
+
+  // Manuel ders ekleme yalnızca OkulSinavi için açık (mobil ile uyumlu).
+  // Diğer sınavların dersleri sabit havuzdur, kullanıcı ekleyemez.
+  const allowManualSubjects = data.targetExam === 'OkulSinavi'
+  // OkulSinavi + "uni_diger" → tamamen manuel ders havuzu (sabit liste yok)
+  const isFullyManual =
+    data.targetExam === 'OkulSinavi' && data.selectedArea === 'uni_diger'
+
+  const baseSubjects: SubjectData[] = useMemo(
+    () => (isFullyManual ? [] : getSubjectsForExam(data.targetExam, data.selectedArea)),
+    [data.targetExam, data.selectedArea, isFullyManual],
+  )
+  const baseNames = useMemo(() => new Set(baseSubjects.map((s) => s.name)), [baseSubjects])
+
+  // Tüm dersler = sabit havuz + manuel eklenenler
+  const allSubjects: SubjectData[] = useMemo(() => {
+    const extras = customSubjects
+      .filter((n) => !baseNames.has(n))
+      .map((n) => ({ name: n, emoji: '📝' }) as SubjectData)
+    return [...baseSubjects, ...extras]
+  }, [baseSubjects, baseNames, customSubjects])
+
+  function addCustomSubject() {
+    const trimmed = newSubject.trim()
+    if (!trimmed) return
+    if (customSubjects.includes(trimmed) || baseNames.has(trimmed)) {
+      setNewSubject('')
+      return
+    }
+    setCustomSubjects((prev) => [...prev, trimmed])
+    setNewSubject('')
+    setDirty(true)
+  }
+
+  function removeCustomSubject(name: string) {
+    setCustomSubjects((prev) => prev.filter((n) => n !== name))
+    setStrong((prev) => prev.filter((n) => n !== name))
+    setWeak((prev) => prev.filter((n) => n !== name))
+    setDirty(true)
+  }
+
+  function toggle(name: string, target: 'strong' | 'weak') {
+    if (target === 'strong') {
+      setStrong((prev) => (prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name]))
+      setWeak((prev) => prev.filter((s) => s !== name))
+    } else {
+      setWeak((prev) => (prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name]))
+      setStrong((prev) => prev.filter((s) => s !== name))
+    }
+    setDirty(true)
+  }
+
+  function save() {
+    if (weak.length === 0 && strong.length === 0) return
+    setDirty(false)
+    onRequestSave(
+      { strongSubjects: strong, weakSubjects: weak, customSubjects },
+      'Ders profilin güncellendi ✨',
+    )
+  }
+
+  function chips(label: string, color: string, selected: string[], target: 'strong' | 'weak') {
+    return (
+      <div>
+        <p className="text-base font-bold mb-2" style={{ color }}>{label}</p>
+        {allSubjects.length === 0 ? (
+          <p className="text-sm px-3 py-2 rounded-lg" style={{ background: 'var(--bg)', color: 'var(--text-hint)' }}>
+            Önce yukarıdan ders ekle.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {allSubjects.map((s) => {
+              const isSel = selected.includes(s.name)
+              const otherList = target === 'strong' ? weak : strong
+              const disabled = otherList.includes(s.name)
+              return (
+                <button
+                  key={s.name}
+                  onClick={() => !disabled && toggle(s.name, target)}
+                  disabled={disabled}
+                  className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-base font-semibold transition-all"
+                  style={{
+                    background: isSel ? `${color}1A` : 'var(--bg)',
+                    color: isSel ? color : 'var(--text-secondary)',
+                    border: `1.5px solid ${isSel ? color : 'var(--border)'}`,
+                    opacity: disabled ? 0.4 : 1,
+                  }}
+                >
+                  <span>{s.emoji}</span> {s.name} {isSel && '✓'}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5 mt-3">
+      {/* Manuel ders ekleme yalnızca OkulSinavi'nde gösterilir — diğer sınavların
+          dersleri sabit ve bellidir. */}
+      {allowManualSubjects && (
+      <div>
+        <p className="text-base font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+          ➕ Kendi Ders(ler)ini Ekle
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newSubject}
+            onChange={(e) => setNewSubject(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomSubject() } }}
+            placeholder="Ders adı (örn. Fizik)"
+            className="flex-1 h-11 px-4 rounded-xl text-base outline-none"
+            style={{ background: 'var(--bg)', border: '1.5px solid var(--border)', color: 'var(--text-primary)' }}
+          />
+          <button
+            onClick={addCustomSubject}
+            className="h-11 w-11 rounded-xl flex items-center justify-center text-white text-xl font-bold"
+            style={{ background: 'var(--primary)' }}
+          >
+            +
+          </button>
+        </div>
+        {customSubjects.length > 0 && (
+          <div className="mt-3">
+            <p className="text-sm font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              Eklediğin Dersler
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {customSubjects.map((n) => (
+                <span
+                  key={n}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                >
+                  📝 {n}
+                  <button
+                    onClick={() => removeCustomSubject(n)}
+                    className="ml-1 text-base leading-none"
+                    style={{ color: 'var(--error)' }}
+                    title="Kaldır"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      )}
+
+      {chips('💪 Güçlü Olduğun Dersler', '#16A34A', strong, 'strong')}
+      {chips('⚡ Zorlandığın Dersler', '#EA580C', weak, 'weak')}
+      {dirty && (
+        <button
+          onClick={save}
+          className="w-full py-3.5 rounded-xl text-base font-bold text-white transition-all hover:opacity-90"
+          style={{ background: 'var(--primary)' }}
+        >
+          💾 Değişiklikleri Kaydet
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── Zaman ve Biyoritim bölümü ────────────────────────────────────────────────
+
+function ZamanBiyoritimSection({ data, onRequestSave }: {
+  data: OnboardingData
+  onRequestSave: (patch: Partial<OnboardingData>, successMsg: string) => void
+}) {
+  const [studyType, setStudyType] = useState(data.studyType)
+  const [offDays, setOffDays] = useState<number[]>(data.offDays)
+  const [hasSchool, setHasSchool] = useState(data.hasWeekdaySchool)
+  const [wdStart, setWdStart] = useState(data.weekdayStartTime)
+  const [wdEnd, setWdEnd] = useState(data.weekdayEndTime)
+  const [wdHours, setWdHours] = useState(data.weekdayStudyHours)
+  const [weHours, setWeHours] = useState(data.weekendStudyHours)
+  const [wdLatest, setWdLatest] = useState(data.weekdayLatestTime)
+  const [weLatest, setWeLatest] = useState(data.weekendLatestTime)
+  const [dirty, setDirty] = useState(false)
+
+  function mark<T>(setter: (v: T) => void) {
+    return (v: T) => { setter(v); setDirty(true) }
+  }
+
+  function toggleDay(idx: number) {
+    setOffDays((prev) => (prev.includes(idx) ? prev.filter((d) => d !== idx) : [...prev, idx]))
+    setDirty(true)
+  }
+
+  function save() {
+    setDirty(false)
+    onRequestSave({
+      studyType, offDays, hasWeekdaySchool: hasSchool,
+      weekdayStartTime: wdStart, weekdayEndTime: wdEnd,
+      weekdayStudyHours: wdHours, weekendStudyHours: weHours,
+      weekdayLatestTime: wdLatest, weekendLatestTime: weLatest,
+    }, 'Çalışma düzenin güncellendi ✨')
+  }
+
+  const inputStyle = {
+    background: 'var(--bg)', border: '1.5px solid var(--border)', color: 'var(--text-primary)',
+  }
+
+  return (
+    <div className="space-y-5 mt-3">
+      {/* Biyoritim */}
+      <div>
+        <p className="text-base font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Biyoritim</p>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { v: 'sabah', emoji: '🌅', label: 'Sabah Kuşu' },
+            { v: 'gece', emoji: '🌙', label: 'Gece Baykuşu' },
+          ].map((o) => (
+            <button
+              key={o.v}
+              onClick={() => mark(setStudyType)(o.v)}
+              className="py-4 rounded-xl text-base font-bold transition-all"
+              style={{
+                background: studyType === o.v ? 'var(--primary)' : 'var(--bg)',
+                color: studyType === o.v ? '#fff' : 'var(--text-secondary)',
+                border: `1.5px solid ${studyType === o.v ? 'var(--primary)' : 'var(--border)'}`,
+              }}
+            >
+              {o.emoji} {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Dinlenme günleri */}
+      <div>
+        <p className="text-base font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Ders İstemediğin Günler</p>
+        <div className="flex flex-wrap gap-2">
+          {DAY_LABELS.map((d, i) => (
+            <button
+              key={d}
+              onClick={() => toggleDay(i)}
+              className="px-4 py-2.5 rounded-xl text-base font-bold transition-all"
+              style={{
+                background: offDays.includes(i) ? 'var(--primary)' : 'var(--bg)',
+                color: offDays.includes(i) ? '#fff' : 'var(--text-secondary)',
+                border: `1.5px solid ${offDays.includes(i) ? 'var(--primary)' : 'var(--border)'}`,
+              }}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Hafta içi okul */}
+      <div className="flex items-center justify-between">
+        <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>Hafta içi okulum var</span>
+        <button
+          onClick={() => mark(setHasSchool)(!hasSchool)}
+          className="w-12 h-7 rounded-full transition-all relative"
+          style={{ background: hasSchool ? 'var(--primary)' : 'var(--border)' }}
+        >
+          <span
+            className="absolute top-1 w-5 h-5 rounded-full bg-white transition-all"
+            style={{ left: hasSchool ? '26px' : '4px' }}
+          />
+        </button>
+      </div>
+      {hasSchool && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-base font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Okul başlangıç</label>
+            <input type="time" value={wdStart} onChange={(e) => mark(setWdStart)(e.target.value)}
+              className="w-full h-12 px-3 rounded-xl text-base outline-none" style={inputStyle} />
+          </div>
+          <div>
+            <label className="block text-base font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Okul bitiş</label>
+            <input type="time" value={wdEnd} onChange={(e) => mark(setWdEnd)(e.target.value)}
+              className="w-full h-12 px-3 rounded-xl text-base outline-none" style={inputStyle} />
+          </div>
+        </div>
+      )}
+
+      {/* Çalışma saatleri */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-base font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Hafta içi günlük</label>
+          <select value={wdHours} onChange={(e) => mark(setWdHours)(Number(e.target.value))}
+            className="w-full h-12 px-3 rounded-xl text-base outline-none" style={inputStyle}>
+            {Array.from({ length: 10 }, (_, i) => i + 1).map((h) => <option key={h} value={h}>{h} saat</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-base font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Hafta sonu günlük</label>
+          <select value={weHours} onChange={(e) => mark(setWeHours)(Number(e.target.value))}
+            className="w-full h-12 px-3 rounded-xl text-base outline-none" style={inputStyle}>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => <option key={h} value={h}>{h} saat</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* En geç saatler */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-base font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Hafta içi en geç</label>
+          <input type="time" value={wdLatest} onChange={(e) => mark(setWdLatest)(e.target.value)}
+            className="w-full h-12 px-3 rounded-xl text-base outline-none" style={inputStyle} />
+        </div>
+        <div>
+          <label className="block text-base font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>Hafta sonu en geç</label>
+          <input type="time" value={weLatest} onChange={(e) => mark(setWeLatest)(e.target.value)}
+            className="w-full h-12 px-3 rounded-xl text-base outline-none" style={inputStyle} />
+        </div>
+      </div>
+
+      {dirty && (
+        <button
+          onClick={save}
+          className="w-full py-3.5 rounded-xl text-base font-bold text-white transition-all hover:opacity-90"
+          style={{ background: 'var(--primary)' }}
+        >
+          💾 Değişiklikleri Kaydet
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── Sınav Tarihi ve Hedef bölümü ─────────────────────────────────────────────
+
+// Mobil _goalLabels ile birebir aynı: sınav türü + alan + eğitim düzeyine göre
+// hedef başlığı/alt yazı/placeholder üretir.
+// Tuple: [primaryLabel, primaryHint, primarySubtitle, aytLabel, aytHint, netHint]
+function goalLabels(
+  exam: string,
+  area: string,
+  educationLevel: string,
+): [string, string, string, string, string, string] {
+  switch (exam) {
+    case 'LGS':
+      return [
+        '🎓 LGS Hedefi Belirle',
+        'Örn: Galatasaray Lisesi',
+        'Hayalindeki liseyi ve gereken puanı gir.',
+        '🎓 LGS Hedefi',
+        'Örn: Kabataş Erkek Lisesi',
+        'Gereken Net / Puan',
+      ]
+    case 'KPSS':
+      return [
+        '🎓 KPSS Hedefi Belirle',
+        'Örn: Ankara İl Müdürlüğü Memur',
+        'Hayalindeki kadroyu ve gereken neti gir.',
+        '🎓 KPSS Hedefi',
+        'Örn: Ankara İl Müdürlüğü Memur',
+        'Gereken Net / Puan',
+      ]
+    case 'ALES':
+      return [
+        '🎓 ALES Hedefi Belirle',
+        'Örn: İTÜ Yüksek Lisans',
+        'Başvurmak istediğin programı gir.',
+        '🎓 ALES Hedefi',
+        'Örn: İTÜ Yüksek Lisans',
+        'Gereken Net / Puan',
+      ]
+    case 'YDS':
+      return [
+        '🎓 YDS Hedefi Belirle',
+        'Örn: 90+ puan, akademik başvuru',
+        'Hedefin puanı ve amacını gir.',
+        '🎓 YDS Hedefi',
+        'Örn: 90+ puan',
+        'Gereken Net / Puan',
+      ]
+    case 'Öğretmenlik':
+      return [
+        '🎓 AGS/ÖABT Hedefi Belirle',
+        'Örn: Matematik Öğretmenliği — İstanbul',
+        'Hayalindeki branş ve il tercihini gir.',
+        '🎓 ÖABT Hedefi',
+        'Örn: Matematik branşı',
+        'Gereken Net / Puan',
+      ]
+    case 'OkulSinavi': {
+      let goalHint: string
+      let subtitle: string
+      if (educationLevel === 'ortaokul') {
+        goalHint = 'Örn: Kabataş Erkek Lisesi'
+        subtitle = 'Hedef liseni ve gereken ortalamayı gir.'
+      } else if (educationLevel === 'lise') {
+        goalHint = 'Örn: ODTÜ Bilgisayar Mühendisliği'
+        subtitle = 'Hedef üniversiteni ve gereken ortalamayı gir.'
+      } else {
+        goalHint = 'Örn: Google, Yazılım Geliştirici'
+        subtitle = 'Hedef iş yerini ve gereken ortalamayı gir.'
+      }
+      return [
+        '🏫 Not Ortalaması Hedefi',
+        goalHint,
+        subtitle,
+        '',
+        '',
+        'Gereken Ortalama',
+      ]
+    }
+    case 'YKS':
+    default: {
+      const aytLabel = area === 'dil' ? '🎓 YDT Hedefi Belirle' : '🎓 AYT Hedefi Belirle'
+      const aytHint = area === 'dil' ? 'Örn: Boğaziçi Mütercim-Tercümanlık' : 'Örn: ODTÜ Bilgisayar'
+      return [
+        '🎓 TYT Hedefi Belirle',
+        'Örn: Boğaziçi Üniversitesi',
+        'Hayalindeki üniversite ve bölümü gir.',
+        aytLabel,
+        aytHint,
+        'Gereken Net / Puan',
+      ]
+    }
+  }
+}
+
+function SinavTarihiSection({ data, onSaved, onProfileChange }: {
+  data: OnboardingData
+  onSaved: (msg: string) => void
+  onProfileChange: (d: OnboardingData) => void
+}) {
+  const userId = getUserId()
+  const [goal, setGoal] = useState<ExamGoal>(() => (userId ? getExamGoal(userId) : { tytHedef: '', tytNet: null, aytHedef: '', aytNet: null }))
+  const [examDate, setExamDate] = useState(data.examDate ? data.examDate.slice(0, 10) : '')
+  const [goalDirty, setGoalDirty] = useState(false)
+  const [dateDirty, setDateDirty] = useState(false)
+
+  const exam = data.targetExam
+  const isYKS = exam === 'YKS'
+  const hasAyt = isYKS && ['sayisal', 'esit_agirlik', 'sozel', 'dil'].includes(data.selectedArea)
+
+  // Mobil _goalLabels ile aynı: sınav türüne göre detaylı placeholder/açıklama
+  // (primaryLabel, primaryHint, primarySubtitle, aytLabel, aytHint, netHint)
+  const labels = useMemo(() => goalLabels(exam, data.selectedArea, data.educationLevel), [exam, data.selectedArea, data.educationLevel])
+  const [primaryLabel, primaryHint, primarySubtitle, aytLabel, aytHint, netHint] = labels
+
+  function saveGoal() {
+    if (!userId) return
+    saveExamGoal(userId, goal)
+    setGoalDirty(false)
+    onSaved('Hedef kaydedildi ✨')
+  }
+
+  async function saveDate() {
+    if (!examDate) return
+    const updated = await persistProfile({ examDate: new Date(`${examDate}T12:00:00`).toISOString() })
+    if (updated) onProfileChange(updated)
+    setDateDirty(false)
+    onSaved('Sınav tarihi güncellendi ✅')
+  }
+
+  const daysLeft = daysUntil(examDate || data.examDate)
+  const inputStyle = { background: 'var(--bg)', border: '1.5px solid var(--border)', color: 'var(--text-primary)' }
+
+  function goalCard(
+    title: string,
+    subtitle: string,
+    hint: string,
+    netPlaceholder: string,
+    hedef: string,
+    net: number | null,
+    setH: (v: string) => void,
+    setN: (v: number | null) => void,
+  ) {
+    return (
+      <div className="rounded-xl p-4" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+        <p className="text-base font-extrabold mb-1" style={{ color: 'var(--primary)' }}>{title}</p>
+        <p className="text-base mb-3" style={{ color: 'var(--text-hint)' }}>{subtitle}</p>
+        <input
+          value={hedef}
+          onChange={(e) => { setH(e.target.value); setGoalDirty(true) }}
+          placeholder={`🎯 ${hint}`}
+          className="w-full h-12 px-3 rounded-xl text-base outline-none mb-2.5"
+          style={inputStyle}
+        />
+        <input
+          type="number"
+          value={net ?? ''}
+          onChange={(e) => { setN(e.target.value ? parseFloat(e.target.value) : null); setGoalDirty(true) }}
+          placeholder={`📊 ${netPlaceholder}`}
+          className="w-full h-12 px-3 rounded-xl text-base outline-none"
+          style={inputStyle}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4 mt-3">
+      {goalCard(primaryLabel, primarySubtitle, primaryHint, netHint, goal.tytHedef, goal.tytNet,
+        (v) => setGoal((g) => ({ ...g, tytHedef: v })),
+        (v) => setGoal((g) => ({ ...g, tytNet: v })))}
+
+      {hasAyt && goalCard(aytLabel, primarySubtitle, aytHint, netHint, goal.aytHedef, goal.aytNet,
+        (v) => setGoal((g) => ({ ...g, aytHedef: v })),
+        (v) => setGoal((g) => ({ ...g, aytNet: v })))}
+
+      {goalDirty && (
+        <button
+          onClick={saveGoal}
+          className="w-full py-3 rounded-xl text-base font-bold text-white transition-all hover:opacity-90"
+          style={{ background: 'var(--primary)' }}
+        >
+          Hedefi Kaydet
+        </button>
+      )}
+
+      {/* Sınav tarihi */}
+      <div className="rounded-xl p-4" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-base font-extrabold" style={{ color: 'var(--text-primary)' }}>📅 Sınav Tarihi</p>
+          {daysLeft !== null && (
+            <span className="px-3 py-1 rounded-full text-base font-bold" style={{ background: '#EEF2FF', color: 'var(--primary)' }}>
+              {daysLeft} gün
+            </span>
+          )}
+        </div>
+        <input
+          type="date"
+          value={examDate}
+          min={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => { setExamDate(e.target.value); setDateDirty(true) }}
+          className="w-full h-12 px-3 rounded-xl text-base outline-none"
+          style={inputStyle}
+        />
+        {dateDirty && (
+          <button
+            onClick={saveDate}
+            className="w-full mt-3 py-3 rounded-xl text-base font-bold text-white transition-all hover:opacity-90"
+            style={{ background: 'var(--primary)' }}
+          >
+            Tarihi Kaydet
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Ana sayfa ─────────────────────────────────────────────────────────────────
+
+// Hızlı not ekleme modalı
+function QuickNoteModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+
+  function save() {
+    if (!content.trim()) return
+    const next: QuickNote[] = [
+      { id: `note-${Date.now()}`, title: title.trim() || 'Not', content: content.trim(), createdAt: new Date().toISOString() },
+      ...getQuickNotes(),
+    ]
+    saveQuickNotes(next)
+    onAdded()
+    onClose()
+  }
+
+  const inputStyle = { background: 'var(--bg)', border: '2px solid var(--border)', color: 'var(--text-primary)' }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-md rounded-3xl overflow-hidden" style={{ background: 'var(--card)' }}>
+        <div className="px-7 py-5" style={{ background: 'linear-gradient(135deg, #F59E0B, #F97316)' }}>
+          <h3 className="text-xl font-extrabold text-white">📝 Hızlı Not</h3>
+        </div>
+        <div className="p-6 space-y-4">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Başlık girin..."
+            className="w-full h-13 px-4 py-3 rounded-xl text-base outline-none" style={inputStyle} autoFocus />
+          <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="Aklına geleni yaz..."
+            rows={4} className="w-full px-4 py-3 rounded-xl text-base outline-none resize-none" style={inputStyle} />
+          <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 py-3 rounded-xl text-base font-semibold"
+              style={{ background: 'var(--bg)', color: 'var(--text-secondary)', border: '1.5px solid var(--border)' }}>
+              İptal
+            </button>
+            <button onClick={save} disabled={!content.trim()}
+              className="flex-1 py-3 rounded-xl text-base font-bold text-white disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}>
+              ✓ Kaydet
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function ProfilePage() {
   const navigate = useNavigate()
-  const userName = getUserName()
-  const { profile, loading: profileLoading, refresh: refreshProfile } = useUserProfile()
-
-  const [xp, setXp] = useState<XpInfo | null>(null)
-  const [notes, setNotes] = useState<QuickNote[]>([])
-  const [noteInput, setNoteInput] = useState('')
+  const [data, setData] = useState<OnboardingData | null>(null)
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
-  const [examDateEdit, setExamDateEdit] = useState(false)
-  const [examDateValue, setExamDateValue] = useState('')
-  const [savingDate, setSavingDate] = useState(false)
-  const [subjectEditMode, setSubjectEditMode] = useState(false)
-  const [editStrong, setEditStrong] = useState<string[]>([])
-  const [editWeak, setEditWeak] = useState<string[]>([])
-  const [savingSubjects, setSavingSubjects] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const [pending, setPending] = useState<{ patch: Partial<OnboardingData>; msg: string } | null>(null)
+  const [showNote, setShowNote] = useState(false)
+  const [showLogout, setShowLogout] = useState(false)
+  const [notesKey, setNotesKey] = useState(0)
 
   useEffect(() => {
-    gelisimimService.getXpInfo().then(setXp).catch(() => {})
-    setNotes(getQuickNotes())
+    const uid = getUserId()
+    if (uid) setData(getOnboardingData(uid) ?? { ...defaultOnboardingData })
   }, [])
 
-  useEffect(() => {
-    if (profile?.examDate) {
-      setExamDateValue(profile.examDate.split('T')[0])
-    }
-    if (profile) {
-      setEditStrong(profile.strongSubjects ?? [])
-      setEditWeak(profile.weakSubjects ?? [])
-    }
-  }, [profile])
+  function showToast(msg: string) {
+    setToast(msg)
+    window.setTimeout(() => setToast(null), 2600)
+  }
+
+  // Profil değişikliği talebi → onay modalı açar
+  function requestSave(patch: Partial<OnboardingData>, msg: string) {
+    setPending({ patch, msg })
+  }
+
+  // Onaylanınca uygula: localStorage + plan yeniden üret + backend
+  async function applyPending() {
+    if (!pending) return
+    await persistProfile(pending.patch)
+    const uid = getUserId()
+    if (uid) setData(getOnboardingData(uid))
+    showToast(pending.msg)
+    setPending(null)
+  }
 
   function toggleDark() {
     const next = !dark
@@ -108,729 +1053,139 @@ export default function ProfilePage() {
     navigate('/login')
   }
 
-  function addNote() {
-    const content = noteInput.trim()
-    if (!content) return
-    const note: QuickNote = {
-      id: `note-${Date.now()}`,
-      content,
-      createdAt: new Date().toISOString(),
-    }
-    setNotes((n) => {
-      const next = [note, ...n]
-      saveQuickNotes(next)
-      return next
-    })
-    setNoteInput('')
-  }
-
-  function deleteNote(id: string) {
-    setNotes((n) => {
-      const next = n.filter((x) => x.id !== id)
-      saveQuickNotes(next)
-      return next
-    })
-  }
-
-  /** Profili backend'e (POST = upsert) gönderir, localStorage'ı senkron tutar, planı yeniden üretir. */
-  async function persistProfile(patch: Partial<typeof profile>) {
-    const merged = { ...(profile ?? {}), ...patch }
-    await api.post('/UserProfile', merged)
-    const userId = getUserId()
-    if (userId) {
-      const local = getOnboardingData(userId) ?? { ...defaultOnboardingData }
-      const updated = { ...local, ...patch }
-      saveOnboardingData(userId, updated)
-      generateAndStorePlan(userId, updated)
-    }
-    await refreshProfile()
-  }
-
-  async function saveExamDate() {
-    if (!examDateValue) return
-    setSavingDate(true)
-    try {
-      await persistProfile({ examDate: examDateValue })
-      setExamDateEdit(false)
-    } catch {}
-    setSavingDate(false)
-  }
-
-  async function saveSubjects() {
-    setSavingSubjects(true)
-    try {
-      await persistProfile({ strongSubjects: editStrong, weakSubjects: editWeak })
-      setSubjectEditMode(false)
-    } catch {}
-    setSavingSubjects(false)
-  }
-
-  function toggleSubject(list: string[], setList: (v: string[]) => void, name: string) {
-    setList(list.includes(name) ? list.filter((s) => s !== name) : [...list, name])
-  }
-
-  const xpProgress = xp ? Math.min(1, xp.currentXp / Math.max(1, xp.xpForNextLevel)) : 0
-  const daysLeft = daysUntil(profile?.examDate)
-  const allSubjects = profile
-    ? getSubjectsForExam(profile.targetExam, profile.selectedArea)
-    : []
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // Ad: onboarding'de girilen ad; yoksa boş
+  const displayName = (data?.name || '').trim()
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      {/* ── Profile Header Banner ──────────────────────────────────────────── */}
-      <div
-        className="relative overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #0F0C29 0%, #1A1A2E 40%, #2D1B69 100%)' }}
-      >
-        {/* Decorative blobs */}
+    <>
+      <div className="min-h-full pb-24">
+        {/* Siyah header — kullanıcı adı + kademe */}
         <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              'radial-gradient(circle at 80% 50%, rgba(109,40,217,0.25) 0%, transparent 60%)',
-          }}
-        />
-        <div
-          className="absolute top-0 left-0 w-72 h-72 rounded-full opacity-10 pointer-events-none"
-          style={{
-            background: 'radial-gradient(circle, #818CF8, transparent)',
-            transform: 'translate(-40%, -40%)',
-          }}
-        />
-
-        <div className="relative max-w-7xl mx-auto px-10 py-12">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-7">
-            {/* Avatar */}
-            <div
-              className="w-32 h-32 rounded-3xl flex items-center justify-center text-6xl font-extrabold text-white shadow-2xl flex-shrink-0"
-              style={{
-                background: 'linear-gradient(135deg, #4F46E5, #7C3AED)',
-                border: '3px solid rgba(255,255,255,0.2)',
-              }}
-            >
-              {(profile?.name ?? userName)?.[0]?.toUpperCase() || '?'}
-            </div>
-
-            {/* Name + Info */}
-            <div className="flex-1 min-w-0">
-              <h1 className="text-5xl font-extrabold text-white tracking-tight uppercase">
-                {profile?.name ?? userName ?? 'Öğrenci'}
-              </h1>
-              {profile?.targetExam && (
-                <p className="text-white/60 text-base mt-1">
-                  🎓 {profile.targetExam}
-                  {profile.selectedArea ? ` · ${profile.selectedArea}` : ''}
-                </p>
-              )}
-
-              {/* XP Progress */}
-              {xp && (
-                <div className="mt-4 max-w-sm">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-white/80 text-sm font-semibold">
-                      {xp.levelEmoji} Seviye {xp.level} — {xp.levelName}
-                    </span>
-                    <span className="text-white/50 text-xs">
-                      {xp.currentXp.toLocaleString('tr-TR')} / {xp.xpForNextLevel.toLocaleString('tr-TR')} XP
-                    </span>
-                  </div>
-                  <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.15)' }}>
-                    <div
-                      className="h-full rounded-full transition-all duration-700"
-                      style={{
-                        width: `${xpProgress * 100}%`,
-                        background: 'linear-gradient(90deg, #818CF8, #C084FC)',
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Badges */}
-            <div className="flex flex-col sm:flex-row gap-3 self-start">
-              {xp && (
-                <div
-                  className="flex items-center gap-2 px-4 py-3 rounded-2xl"
-                  style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
-                >
-                  <span className="text-2xl">{xp.levelEmoji}</span>
-                  <div>
-                    <p className="text-white/60 text-[10px] uppercase tracking-widest font-bold">Seviye</p>
-                    <p className="text-white font-extrabold text-xl leading-none">{xp.level}</p>
-                  </div>
-                </div>
-              )}
-              {xp?.streakDays ? (
-                <div
-                  className="flex items-center gap-2 px-4 py-3 rounded-2xl"
-                  style={{ background: 'rgba(249,115,22,0.2)', border: '1px solid rgba(249,115,22,0.4)' }}
-                >
-                  <span className="text-2xl">🔥</span>
-                  <div>
-                    <p className="text-orange-300 text-[10px] uppercase tracking-widest font-bold">Seri</p>
-                    <p className="text-white font-extrabold text-xl leading-none">{xp.streakDays} gün</p>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+          className="px-8 sm:px-10 pt-12 pb-10 flex flex-col items-center text-center"
+          style={{ background: 'linear-gradient(135deg, #1F2937 0%, #0F172A 100%)' }}
+        >
+          <div
+            className="w-24 h-24 rounded-full flex items-center justify-center text-5xl mb-4"
+            style={{ background: 'rgba(255,255,255,0.12)' }}
+          >
+            🎓
           </div>
+          <h1 className="text-4xl font-extrabold text-white tracking-wide">
+            {displayName ? displayName.toLocaleUpperCase('tr-TR') : 'ÖĞRENCİ'}
+          </h1>
+          <p className="text-white/60 text-lg mt-1">
+            {data?.educationLevel ? (EDU_LABELS[data.educationLevel] ?? data.educationLevel) : 'Öğrenci'}
+          </p>
         </div>
-      </div>
 
-      {/* ── Body ──────────────────────────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-10 py-10 space-y-7">
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* Left Column */}
-          <div className="xl:col-span-2 space-y-6">
-            {/* XP / Level Card */}
-            {xp && (
-              <div
-                className="rounded-3xl p-6 shadow-md overflow-hidden relative"
-                style={{
-                  background: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 100%)',
-                }}
-              >
-                <div className="relative flex items-center gap-5">
-                  <div
-                    className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl flex-shrink-0"
-                    style={{ background: 'rgba(255,255,255,0.12)' }}
-                  >
-                    {xp.levelEmoji}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-white/60 text-sm font-semibold uppercase tracking-widest">
-                      Mevcut Seviye
-                    </p>
-                    <p className="text-3xl font-extrabold text-white mt-0.5">
-                      {xp.level} — {xp.levelName}
-                    </p>
-                    <div className="mt-3">
-                      <div className="flex justify-between text-xs text-white/50 mb-1.5 font-medium">
-                        <span>{xp.currentXp.toLocaleString('tr-TR')} XP</span>
-                        <span>Seviye {xp.level + 1} için {xp.xpForNextLevel.toLocaleString('tr-TR')} XP</span>
-                      </div>
-                      <div className="h-3 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.15)' }}>
-                        <div
-                          className="h-full rounded-full transition-all duration-700"
-                          style={{
-                            width: `${xpProgress * 100}%`,
-                            background: 'linear-gradient(90deg, #818CF8, #C084FC)',
-                          }}
-                        />
-                      </div>
-                      <p className="text-xs text-white/40 mt-1.5 text-right">
-                        %{Math.round(xpProgress * 100)} tamamlandı
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+        <div className="px-8 sm:px-10 pt-8 space-y-5 sm:space-y-6">
+          {!data ? (
+            <div className="h-40 rounded-2xl animate-pulse" style={{ background: 'var(--bg)' }} />
+          ) : (
+            <>
+              <Section icon="⚡" title="Notlarım" color="#F59E0B">
+                <NotesSection key={notesKey} />
+              </Section>
 
-            {/* Akademik Hedefim */}
-            <SectionCard
-              title="🎯 Akademik Hedefim"
-              action={
-                !examDateEdit ? (
-                  <button
-                    onClick={() => setExamDateEdit(true)}
-                    className="px-4 py-1.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
-                    style={{ background: '#EEF2FF', color: '#4F46E5' }}
-                  >
-                    ✏️ Düzenle
-                  </button>
-                ) : null
-              }
-            >
-              {profileLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-5 w-1/2" />
-                  <Skeleton className="h-5 w-1/3" />
-                </div>
-              ) : profile ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <InfoItem label="Hedef Sınav" value={profile.targetExam} icon="📚" />
-                    <InfoItem label="Alan" value={profile.selectedArea || '—'} icon="🗂️" />
-                  </div>
-
-                  {/* Exam date */}
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-hint)' }}>
-                      📅 Sınav Tarihi
-                    </p>
-                    {examDateEdit ? (
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="date"
-                          value={examDateValue}
-                          onChange={(e) => setExamDateValue(e.target.value)}
-                          className="flex-1 px-4 py-2.5 rounded-2xl text-base outline-none"
-                          style={{
-                            background: 'var(--bg)',
-                            border: '2px solid #4F46E5',
-                            color: 'var(--text-primary)',
-                          }}
-                        />
-                        <button
-                          onClick={saveExamDate}
-                          disabled={savingDate}
-                          className="px-4 py-2.5 rounded-2xl text-sm font-bold text-white disabled:opacity-60"
-                          style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
-                        >
-                          {savingDate ? '...' : 'Kaydet'}
-                        </button>
-                        <button
-                          onClick={() => setExamDateEdit(false)}
-                          className="px-4 py-2.5 rounded-2xl text-sm font-semibold"
-                          style={{
-                            background: 'var(--bg)',
-                            color: 'var(--text-secondary)',
-                            border: '1px solid var(--border)',
-                          }}
-                        >
-                          İptal
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-4">
-                        <p className="text-2xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                          {profile.examDate
-                            ? new Date(profile.examDate).toLocaleDateString('tr-TR', {
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric',
-                              })
-                            : 'Belirtilmemiş'}
-                        </p>
-                        {daysLeft !== null && (
-                          <span
-                            className="px-3 py-1 rounded-full text-sm font-bold"
-                            style={{
-                              background:
-                                daysLeft < 30
-                                  ? '#FEF2F2'
-                                  : daysLeft < 90
-                                  ? '#FFFBEB'
-                                  : '#F0FDF4',
-                              color:
-                                daysLeft < 30
-                                  ? '#EF4444'
-                                  : daysLeft < 90
-                                  ? '#F59E0B'
-                                  : '#10B981',
-                            }}
-                          >
-                            {daysLeft} gün kaldı
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm" style={{ color: 'var(--text-hint)' }}>
-                  Profil bilgisi yüklenemedi.
-                </p>
-              )}
-            </SectionCard>
-
-            {/* Ders Profilim */}
-            <SectionCard
-              title="📖 Ders Profilim"
-              action={
-                <button
-                  onClick={() => setSubjectEditMode((v) => !v)}
-                  className="px-4 py-1.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
-                  style={{ background: '#EEF2FF', color: '#4F46E5' }}
-                >
-                  {subjectEditMode ? '✕ Kapat' : '✏️ Düzenle'}
-                </button>
-              }
-            >
-              {profileLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-4 w-1/4" />
-                  <div className="flex gap-2 flex-wrap">
-                    {[1, 2, 3].map((i) => <Skeleton key={i} className="h-8 w-24" />)}
-                  </div>
-                </div>
-              ) : subjectEditMode ? (
-                <div className="space-y-5">
-                  <div>
-                    <p className="text-sm font-bold mb-3" style={{ color: '#10B981' }}>
-                      💪 Güçlü Derslerim
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {allSubjects.map((s) => {
-                        const active = editStrong.includes(s.name)
-                        return (
-                          <button
-                            key={s.name}
-                            onClick={() => toggleSubject(editStrong, setEditStrong, s.name)}
-                            className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-                            style={{
-                              background: active ? '#D1FAE5' : 'var(--bg)',
-                              color: active ? '#065F46' : 'var(--text-secondary)',
-                              border: `2px solid ${active ? '#10B981' : 'var(--border)'}`,
-                            }}
-                          >
-                            {s.emoji} {s.name}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold mb-3" style={{ color: '#EF4444' }}>
-                      📌 Geliştireceğim Dersler
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {allSubjects.map((s) => {
-                        const active = editWeak.includes(s.name)
-                        return (
-                          <button
-                            key={s.name}
-                            onClick={() => toggleSubject(editWeak, setEditWeak, s.name)}
-                            className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-                            style={{
-                              background: active ? '#FEE2E2' : 'var(--bg)',
-                              color: active ? '#991B1B' : 'var(--text-secondary)',
-                              border: `2px solid ${active ? '#EF4444' : 'var(--border)'}`,
-                            }}
-                          >
-                            {s.emoji} {s.name}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                  <div className="flex gap-3 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
-                    <button
-                      onClick={saveSubjects}
-                      disabled={savingSubjects}
-                      className="px-5 py-2.5 rounded-2xl text-sm font-bold text-white disabled:opacity-60"
-                      style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
-                    >
-                      {savingSubjects ? 'Kaydediliyor...' : '💾 Kaydet'}
-                    </button>
-                    <button
-                      onClick={() => setSubjectEditMode(false)}
-                      className="px-5 py-2.5 rounded-2xl text-sm font-semibold"
-                      style={{
-                        background: 'var(--bg)',
-                        color: 'var(--text-secondary)',
-                        border: '1px solid var(--border)',
-                      }}
-                    >
-                      İptal
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {(profile?.strongSubjects ?? []).length > 0 ? (
-                    <div>
-                      <p className="text-xs font-bold mb-2 uppercase tracking-widest" style={{ color: '#10B981' }}>
-                        💪 Güçlü Dersler
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {(profile?.strongSubjects ?? []).map((s) => (
-                          <span
-                            key={s}
-                            className="px-3 py-1.5 rounded-full text-xs font-bold"
-                            style={{ background: '#D1FAE5', color: '#065F46' }}
-                          >
-                            ✅ {s}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {(profile?.weakSubjects ?? []).length > 0 ? (
-                    <div>
-                      <p className="text-xs font-bold mb-2 uppercase tracking-widest" style={{ color: '#EF4444' }}>
-                        📌 Geliştireceğim Dersler
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {(profile?.weakSubjects ?? []).map((s) => (
-                          <span
-                            key={s}
-                            className="px-3 py-1.5 rounded-full text-xs font-bold"
-                            style={{ background: '#FEE2E2', color: '#991B1B' }}
-                          >
-                            📌 {s}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {(profile?.strongSubjects ?? []).length === 0 &&
-                    (profile?.weakSubjects ?? []).length === 0 && (
-                      <p className="text-sm" style={{ color: 'var(--text-hint)' }}>
-                        Henüz ders profili oluşturulmadı. "Düzenle" ile ekleyebilirsiniz.
-                      </p>
-                    )}
-                </div>
-              )}
-            </SectionCard>
-
-            {/* Zaman ve Biyoritim */}
-            <SectionCard title="⏰ Zaman ve Çalışma Düzenim">
-              {profileLoading ? (
-                <div className="grid grid-cols-2 gap-4">
-                  {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20" />)}
-                </div>
-              ) : profile ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  {[
-                    { icon: '📅', label: 'Hafta içi', value: `${profile.weekdayStudyHours} saat/gün`, color: '#4F46E5' },
-                    { icon: '🌅', label: 'Hafta sonu', value: `${profile.weekendStudyHours} saat/gün`, color: '#6D28D9' },
-                    { icon: '🧠', label: 'Çalışma Tipi', value: profile.studyType || '—', color: '#10B981' },
-                    { icon: '🎯', label: 'Hedef Sınav', value: profile.targetExam || '—', color: '#F59E0B' },
-                  ].map((item) => (
-                    <div
-                      key={item.label}
-                      className="rounded-2xl p-4 text-center"
-                      style={{ background: `${item.color}12`, border: `1px solid ${item.color}30` }}
-                    >
-                      <p className="text-3xl mb-2">{item.icon}</p>
-                      <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: item.color }}>
-                        {item.label}
-                      </p>
-                      <p className="text-base font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                        {item.value}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm" style={{ color: 'var(--text-hint)' }}>
-                  Bilgi yüklenemedi.
-                </p>
-              )}
-            </SectionCard>
-
-            {/* Sınav Tarihi Countdown */}
-            {daysLeft !== null && (
-              <div
-                className="rounded-3xl p-6 shadow-md text-center relative overflow-hidden"
-                style={{
-                  background:
-                    daysLeft < 30
-                      ? 'linear-gradient(135deg, #7F1D1D, #991B1B)'
-                      : daysLeft < 90
-                      ? 'linear-gradient(135deg, #78350F, #92400E)'
-                      : 'linear-gradient(135deg, #064E3B, #065F46)',
-                }}
-              >
-                <div
-                  className="absolute inset-0 pointer-events-none"
-                  style={{
-                    background: 'radial-gradient(circle at 50% 120%, rgba(255,255,255,0.08), transparent 60%)',
-                  }}
+              <Section icon="🎓" title="Akademik Hedef" color="#4F46E5">
+                <AkademikHedefSection
+                  data={data}
+                  onConfirm={(patch) => requestSave(patch, 'Akademik hedefin güncellendi ✨')}
                 />
-                <p className="text-white/60 text-sm font-bold uppercase tracking-widest">
-                  {profile?.targetExam ?? 'Sınav'} tarihine kalan
-                </p>
-                <p className="text-8xl font-extrabold text-white mt-2 leading-none">{daysLeft}</p>
-                <p className="text-white/70 text-xl font-semibold mt-1">gün</p>
-                {profile?.examDate && (
-                  <p className="text-white/40 text-sm mt-3">
-                    {new Date(profile.examDate).toLocaleDateString('tr-TR', {
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric',
-                    })}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
+              </Section>
 
-          {/* Right Column */}
-          <div className="space-y-6">
-            {/* Quick Notes */}
-            <div
-              className="rounded-3xl overflow-hidden shadow-md"
-              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-            >
-              <div className="px-5 py-5" style={{ borderBottom: '1px solid var(--border)' }}>
-                <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                  📝 Notlarım
-                </h2>
-                <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                  Hızlı not al, anında kaydet
-                </p>
-              </div>
-              <div className="px-5 py-5 space-y-4">
-                <div className="flex gap-2">
-                  <input
-                    value={noteInput}
-                    onChange={(e) => setNoteInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addNote()}
-                    placeholder="Not ekle..."
-                    className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none"
-                    style={{
-                      background: 'var(--bg)',
-                      border: '2px solid var(--border)',
-                      color: 'var(--text-primary)',
-                    }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = '#4F46E5')}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
-                  />
-                  <button
-                    onClick={addNote}
-                    className="px-4 py-3 rounded-2xl text-sm font-bold text-white hover:opacity-90 transition-opacity"
-                    style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
-                  >
-                    Ekle
-                  </button>
-                </div>
+              <Section icon="📖" title="Ders Profilim" color="#2563EB">
+                <DersProfilimSection data={data} onRequestSave={requestSave} />
+              </Section>
 
-                <div className="space-y-2 max-h-72 overflow-y-auto">
-                  {notes.length === 0 ? (
-                    <div className="text-center py-8" style={{ color: 'var(--text-hint)' }}>
-                      <p className="text-4xl mb-2">📌</p>
-                      <p className="text-sm">Henüz not yok</p>
+              <Section icon="🕐" title="Zaman ve Biyoritim" color="#DB2777">
+                <ZamanBiyoritimSection data={data} onRequestSave={requestSave} />
+              </Section>
+
+              <Section icon="📅" title="Sınav Tarihi ve Hedef" color="#16A34A">
+                <SinavTarihiSection data={data} onSaved={showToast} onProfileChange={setData} />
+              </Section>
+
+              <Section icon="⚙️" title="Ayarlar" color="#64748B">
+                <div className="space-y-3 mt-3">
+                  <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'var(--bg)' }}>
+                    <div>
+                      <p className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>🌙 Karanlık Mod</p>
+                      <p className="text-base" style={{ color: 'var(--text-hint)' }}>Koyu temaya geç</p>
                     </div>
-                  ) : (
-                    notes.map((n) => (
-                      <div
-                        key={n.id}
-                        className="flex items-start gap-3 p-3 rounded-2xl"
-                        style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
-                      >
-                        <span className="text-lg flex-shrink-0 mt-0.5">📌</span>
-                        <p className="flex-1 text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-                          {n.content}
-                        </p>
-                        <button
-                          onClick={() => deleteNote(n.id)}
-                          className="text-xs p-1 rounded-lg opacity-50 hover:opacity-100 transition-opacity flex-shrink-0"
-                          style={{ color: 'var(--error)' }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Settings */}
-            <div
-              className="rounded-3xl overflow-hidden shadow-md"
-              style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-            >
-              <div className="px-5 py-5" style={{ borderBottom: '1px solid var(--border)' }}>
-                <h2 className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                  ⚙️ Ayarlar
-                </h2>
-              </div>
-
-              {/* Dark Mode Toggle */}
-              <button
-                onClick={toggleDark}
-                className="w-full flex items-center justify-between px-5 py-4 transition-colors"
-                style={{ borderBottom: '1px solid var(--border)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-                    style={{ background: dark ? '#312E81' : '#FEF3C7' }}
-                  >
-                    {dark ? '☀️' : '🌙'}
+                    <button
+                      onClick={toggleDark}
+                      className="w-12 h-7 rounded-full transition-all relative"
+                      style={{ background: dark ? 'var(--primary)' : 'var(--border)' }}
+                    >
+                      <span className="absolute top-1 w-5 h-5 rounded-full bg-white transition-all" style={{ left: dark ? '26px' : '4px' }} />
+                    </button>
                   </div>
-                  <div className="text-left">
-                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {dark ? 'Aydınlık Mod' : 'Karanlık Mod'}
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-hint)' }}>
-                      {dark ? 'Açık temaya geç' : 'Koyu temaya geç'}
-                    </p>
+                  <div className="px-4 py-3 rounded-xl" style={{ background: 'var(--bg)' }}>
+                    <p className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>📱 Uygulama Versiyonu</p>
+                    <p className="text-base" style={{ color: 'var(--text-hint)' }}>AI Study Coach Web v1.0.0</p>
                   </div>
                 </div>
-                {/* Toggle switch */}
-                <div
-                  className="relative w-12 h-6 rounded-full transition-all duration-300 flex-shrink-0"
-                  style={{ background: dark ? 'var(--primary)' : 'var(--border)' }}
+              </Section>
+
+              <div className="flex justify-center">
+                <button
+                  onClick={() => setShowLogout(true)}
+                  className="w-1/2 py-4 rounded-2xl text-lg font-bold text-white transition-all hover:opacity-90"
+                  style={{ background: '#EF4444' }}
                 >
-                  <div
-                    className="absolute top-1 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300"
-                    style={{ left: dark ? '28px' : '4px' }}
-                  />
-                </div>
-              </button>
-
-              {/* Version */}
-              <div className="px-5 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-                    style={{ background: '#EEF2FF' }}
-                  >
-                    🏆
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                      Uygulama Versiyonu
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-hint)' }}>
-                      AI Study Coach Web
-                    </p>
-                  </div>
-                </div>
-                <span
-                  className="px-3 py-1 rounded-full text-xs font-bold"
-                  style={{ background: '#EEF2FF', color: '#4F46E5' }}
-                >
-                  v1.0.0
-                </span>
+                  🚪 Çıkış Yap
+                </button>
               </div>
-            </div>
-
-            {/* Logout */}
-            <button
-              onClick={logout}
-              className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-3xl font-bold text-base transition-all hover:opacity-90 shadow-md"
-              style={{
-                background: 'linear-gradient(135deg, #DC2626, #991B1B)',
-                color: '#fff',
-              }}
-            >
-              <span className="text-xl">🚪</span>
-              Çıkış Yap
-            </button>
-          </div>
+            </>
+          )}
         </div>
       </div>
-    </div>
-  )
-}
 
-// ─── InfoItem Helper ──────────────────────────────────────────────────────────
+      {/* Sol-alt: Not FAB (Dashboard ile aynı konum) */}
+      <button
+        onClick={() => setShowNote(true)}
+        className="fixed bottom-6 left-6 lg:left-[304px] w-16 h-16 rounded-full flex items-center justify-center text-3xl shadow-lg transition-all hover:opacity-90 z-40"
+        style={{ background: 'linear-gradient(135deg, #F59E0B, #F97316)' }}
+        title="Hızlı Not"
+      >
+        📝
+      </button>
 
-function InfoItem({ label, value, icon }: { label: string; value: string; icon: string }) {
-  return (
-    <div
-      className="rounded-2xl p-4"
-      style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
-    >
-      <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--text-hint)' }}>
-        {icon} {label}
-      </p>
-      <p className="text-base font-extrabold" style={{ color: 'var(--text-primary)' }}>
-        {value || '—'}
-      </p>
-    </div>
+      {showNote && (
+        <QuickNoteModal onClose={() => setShowNote(false)} onAdded={() => setNotesKey((k) => k + 1)} />
+      )}
+      {pending && (
+        <ProgramRefreshConfirm onCancel={() => setPending(null)} onConfirm={applyPending} />
+      )}
+      {showLogout && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="w-full max-w-sm rounded-3xl p-7 text-center" style={{ background: 'var(--card)' }}>
+            <p className="text-5xl mb-3">🚪</p>
+            <h4 className="text-xl font-extrabold mb-2" style={{ color: 'var(--text-primary)' }}>Çıkış Yap</h4>
+            <p className="text-base mb-6" style={{ color: 'var(--text-secondary)' }}>
+              Hesabından çıkış yapmak istediğine emin misin?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLogout(false)}
+                className="flex-1 py-3.5 rounded-xl text-base font-semibold"
+                style={{ background: 'var(--bg)', color: 'var(--text-secondary)', border: '1.5px solid var(--border)' }}
+              >
+                İptal
+              </button>
+              <button
+                onClick={logout}
+                className="flex-1 py-3.5 rounded-xl text-base font-bold text-white"
+                style={{ background: '#EF4444' }}
+              >
+                Çıkış Yap
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast && <Toast message={toast} />}
+    </>
   )
 }

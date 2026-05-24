@@ -21,6 +21,7 @@ export interface UserProfile {
   offDays: number[]
   strongSubjects: string[]
   weakSubjects: string[]
+  customSubjects: string[]
 }
 
 export function useUserProfile() {

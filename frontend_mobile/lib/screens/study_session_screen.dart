@@ -65,7 +65,10 @@ class _StudySessionScreenState extends ConsumerState<StudySessionScreen> {
   }
 
   void _onComplete() {
-    ref.read(completedTaskIdsProvider.notifier).mark(widget.task.id);
+    // Ders detayını da kaydet — Gelişimim Tüm Zamanlar günlere göre listeler
+    ref
+        .read(completedTaskIdsProvider.notifier)
+        .mark(widget.task.id, task: widget.task);
     _showCompletionDialog();
   }
 

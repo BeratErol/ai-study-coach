@@ -23,13 +23,23 @@ class StudyBlock {
     this.emoji = '📚',
   });
 
+  static String _fmtTime(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  static TimeOfDay _parseTime(String s) {
+    final parts = s.split(':');
+    return TimeOfDay(
+      hour: int.parse(parts[0]),
+      minute: parts.length > 1 ? int.parse(parts[1]) : 0,
+    );
+  }
+
+  // Web ile ortak format: startTime/endTime "HH:MM" string.
   Map<String, dynamic> toJson() => {
         'id': id,
         'subjectName': subjectName,
-        'startHour': startTime.hour,
-        'startMinute': startTime.minute,
-        'endHour': endTime.hour,
-        'endMinute': endTime.minute,
+        'startTime': _fmtTime(startTime),
+        'endTime': _fmtTime(endTime),
         'durationMinutes': durationMinutes,
         'isStrong': isStrong,
         'taskType': taskType,
@@ -37,23 +47,31 @@ class StudyBlock {
         'emoji': emoji,
       };
 
-  factory StudyBlock.fromJson(Map<String, dynamic> json) => StudyBlock(
-        id: json['id'] as String,
-        subjectName: json['subjectName'] as String,
-        startTime: TimeOfDay(
-          hour: json['startHour'] as int,
-          minute: json['startMinute'] as int,
-        ),
-        endTime: TimeOfDay(
-          hour: json['endHour'] as int,
-          minute: json['endMinute'] as int,
-        ),
-        durationMinutes: json['durationMinutes'] as int,
-        isStrong: json['isStrong'] as bool,
-        taskType: json['taskType'] as String? ?? 'konu_anlatimi',
-        isMola: json['isMola'] as bool? ?? false,
-        emoji: json['emoji'] as String? ?? '📚',
-      );
+  // Hem yeni (startTime: "HH:MM") hem eski (startHour/startMinute) formatları okur.
+  factory StudyBlock.fromJson(Map<String, dynamic> json) {
+    TimeOfDay readTime(String prefix) {
+      final s = json['${prefix}Time'];
+      if (s is String && s.isNotEmpty) return _parseTime(s);
+      final h = json['${prefix}Hour'];
+      final m = json['${prefix}Minute'];
+      if (h is num) {
+        return TimeOfDay(hour: h.toInt(), minute: (m is num ? m.toInt() : 0));
+      }
+      return const TimeOfDay(hour: 0, minute: 0);
+    }
+
+    return StudyBlock(
+      id: json['id'] as String,
+      subjectName: json['subjectName'] as String,
+      startTime: readTime('start'),
+      endTime: readTime('end'),
+      durationMinutes: (json['durationMinutes'] as num).toInt(),
+      isStrong: (json['isStrong'] as bool?) ?? false,
+      taskType: json['taskType'] as String? ?? 'konu_anlatimi',
+      isMola: json['isMola'] as bool? ?? false,
+      emoji: json['emoji'] as String? ?? '📚',
+    );
+  }
 }
 
 class StudyDay {
@@ -77,19 +95,34 @@ class StudyDay {
 
   int get totalMinutes => blocks.fold(0, (s, b) => s + b.durationMinutes);
 
+  // Web ile ortak format: date = "YYYY-MM-DD" (UTC kayması yok).
   Map<String, dynamic> toJson() => {
-        'date': date.toIso8601String(),
+        'date':
+            '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
         'dayName': dayName,
         'isOffDay': isOffDay,
         'blocks': blocks.map((b) => b.toJson()).toList(),
       };
 
-  factory StudyDay.fromJson(Map<String, dynamic> json) => StudyDay(
-        date: DateTime.parse(json['date'] as String),
-        dayName: json['dayName'] as String,
-        isOffDay: json['isOffDay'] as bool? ?? false,
-        blocks: (json['blocks'] as List)
-            .map((b) => StudyBlock.fromJson(b as Map<String, dynamic>))
-            .toList(),
-      );
+  // Hem "YYYY-MM-DD" hem tam ISO timestamp formatlarını okur.
+  factory StudyDay.fromJson(Map<String, dynamic> json) {
+    final raw = json['date'] as String;
+    DateTime parsed;
+    if (raw.length == 10) {
+      // "YYYY-MM-DD" — yerel midnight olarak oku (UTC kayması olmaz)
+      final p = raw.split('-').map(int.parse).toList();
+      parsed = DateTime(p[0], p[1], p[2]);
+    } else {
+      // Tam ISO — yerel timezone'a çevir
+      parsed = DateTime.parse(raw).toLocal();
+    }
+    return StudyDay(
+      date: parsed,
+      dayName: json['dayName'] as String,
+      isOffDay: json['isOffDay'] as bool? ?? false,
+      blocks: (json['blocks'] as List)
+          .map((b) => StudyBlock.fromJson(b as Map<String, dynamic>))
+          .toList(),
+    );
+  }
 }

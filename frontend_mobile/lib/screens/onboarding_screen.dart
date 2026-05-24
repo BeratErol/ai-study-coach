@@ -87,7 +87,21 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Future<void> _finish() async {
-    await ref.read(onboardingProvider.notifier).completeOnboarding();
+    try {
+      await ref.read(onboardingProvider.notifier).completeOnboarding();
+    } catch (_) {
+      // Backend'e profil yazılamadı → onboarding tamamlanmış sayılmaz.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Profilin kaydedilemedi. İnternet bağlantını kontrol edip tekrar dene.'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
     if (!mounted) return;
     ref.invalidate(studyPlanProvider);
     ref.invalidate(todayTasksProvider);

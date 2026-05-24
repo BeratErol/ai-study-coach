@@ -25,6 +25,7 @@ interface OnboardingStore extends OnboardingData {
   updateOffDays: (v: number[]) => void
   updateStrongSubjects: (v: string[]) => void
   updateWeakSubjects: (v: string[]) => void
+  updateCustomSubjects: (v: string[]) => void
   reset: () => void
   completeOnboarding: () => Promise<void>
 }
@@ -51,6 +52,7 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
   updateOffDays: (v) => set({ offDays: v }),
   updateStrongSubjects: (v) => set({ strongSubjects: v }),
   updateWeakSubjects: (v) => set({ weakSubjects: v }),
+  updateCustomSubjects: (v) => set({ customSubjects: v }),
   reset: () => set({ ...defaultOnboardingData }),
 
   completeOnboarding: async () => {
@@ -77,14 +79,16 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
       offDays: state.offDays,
       strongSubjects: state.strongSubjects,
       weakSubjects: state.weakSubjects,
+      customSubjects: state.customSubjects,
     }
+    // Önce backend'e yaz — başarısız olursa hata fırlat, çağıran ele alsın.
+    // Profil backend'e kesin yazılmadan onboarding "tamamlandı" sayılmaz;
+    // aksi halde başka cihazda onboarding tekrar gösterilir.
+    await api.post('/UserProfile', data)
+
+    // Backend kaydı başarılı → yerel cache ve plan
     setOnboardingCompleted(userId, true)
     saveOnboardingData(userId, data)
     generateAndStorePlan(userId, data)
-    try {
-      await api.post('/UserProfile', data)
-    } catch {
-      // sync failure is non-blocking
-    }
   },
 }))

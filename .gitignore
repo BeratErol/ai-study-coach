@@ -1,8 +1,80 @@
-@(
+# ─── Build artifacts ────────────────────────────────────────────────
 [Bb]in/
 [Oo]bj/
 *.log
 log.txt
-)
-
 repomix-output.xml
+
+# ─── Editor / IDE / Claude Code ─────────────────────────────────────
+.vs/
+.vscode/
+.idea/
+.claude/
+*.user
+*.suo
+
+# ─── Secrets (asla commit etme) ─────────────────────────────────────
+# Backend lokal ayarlar — gerçek API key, JWT, DB şifresi burada tutulur.
+# Sadece appsettings.json (boş şablon) commit'lenir; .Development.json local kalır.
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Local.json
+.env
+.env.local
+.env.*.local
+
+# ─── .NET ───────────────────────────────────────────────────────────
+*.dll
+*.pdb
+*.exe
+*.cache
+project.lock.json
+artifacts/
+
+# ─── Node / Vite ────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# ─── Flutter ────────────────────────────────────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+flutter_*.png
+linked_*.ds
+unlinked.ds
+unlinked_spec.ds
+
+# ─── Android ────────────────────────────────────────────────────────
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
+*.jks
+*.keystore
+
+# ─── iOS ────────────────────────────────────────────────────────────
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/ios/Pods/
+
+# ─── OS ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini

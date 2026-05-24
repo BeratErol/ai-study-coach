@@ -223,7 +223,11 @@ List<StudyBlock> _buildDayBlocks({
         isWeekend ? data.weekendLatestTime : data.weekdayLatestTime;
     final totalSched = fitting.fold<int>(0, (s, b) => s + b.durationMinutes) +
         (fitting.length > 1 ? (fitting.length - 1) * 10 : 0);
-    startMins = _toMins(_parseTime(latestStr)) - totalSched;
+    // Gece kuşu: "en geç" 00:00–04:00 arası seçildiyse ertesi günün saati
+    // anlamına gelir (örn. "01:00" = bugün 25:00). +24 saat ekle.
+    int latestMins = _toMins(_parseTime(latestStr));
+    if (latestMins < 4 * 60) latestMins += 24 * 60;
+    startMins = latestMins - totalSched;
     if (startMins < 14 * 60) startMins = 14 * 60;
   }
 

@@ -12,7 +12,7 @@ import Step7SleepTime from './steps/Step7SleepTime'
 import Step8Subjects from './steps/Step8Subjects'
 
 function hasAreaStep(targetExam: string) {
-  return targetExam === 'YKS' || targetExam === 'KPSS'
+  return targetExam === 'YKS' || targetExam === 'KPSS' || targetExam === 'OkulSinavi'
 }
 
 function buildStepNames(withArea: boolean): string[] {
@@ -34,6 +34,7 @@ export default function OnboardingPage() {
   const store = useOnboardingStore()
   const [currentStep, setCurrentStep] = useState(0)
   const [finishing, setFinishing] = useState(false)
+  const [finishError, setFinishError] = useState<string | null>(null)
 
   const withArea = hasAreaStep(store.targetExam)
   const stepNames = buildStepNames(withArea)
@@ -54,8 +55,15 @@ export default function OnboardingPage() {
 
   async function finish() {
     setFinishing(true)
-    await store.completeOnboarding()
-    navigate('/dashboard')
+    setFinishError(null)
+    try {
+      await store.completeOnboarding()
+      navigate('/dashboard')
+    } catch {
+      // Backend'e profil yazılamadı → onboarding tamamlanmış sayılmaz.
+      setFinishError('Profilin kaydedilemedi. İnternet bağlantını kontrol edip tekrar dene.')
+      setFinishing(false)
+    }
   }
 
   function isStepValid(): boolean {
@@ -73,7 +81,13 @@ export default function OnboardingPage() {
         const studyTypeIdx = withArea ? 5 : 4
         const subjectsIdx = withArea ? 8 : 7
         if (currentStep === studyTypeIdx) return store.studyType.length > 0
-        if (currentStep === subjectsIdx) return store.weakSubjects.length > 0
+        if (currentStep === subjectsIdx) {
+          // uni_diger: kullanıcı tüm dersleri manuel ekler → customSubjects yeterli
+          if (store.targetExam === 'OkulSinavi' && store.selectedArea === 'uni_diger') {
+            return store.customSubjects.length > 0
+          }
+          return store.weakSubjects.length > 0
+        }
         return true
       }
     }
@@ -106,16 +120,16 @@ export default function OnboardingPage() {
           <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-3">
               <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-extrabold text-base"
+                className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-extrabold text-xl"
                 style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
               >
                 {currentStep + 1}
               </div>
               <div>
-                <span className="text-indigo-600 font-extrabold text-lg block leading-none">
+                <span className="text-indigo-600 font-extrabold text-2xl block leading-tight">
                   Adım {currentStep + 1}/{totalSteps}
                 </span>
-                <span className="text-gray-500 text-sm">{stepNames[currentStep]}</span>
+                <span className="text-gray-500 text-base">{stepNames[currentStep]}</span>
               </div>
             </div>
             <div className="flex gap-1.5">
@@ -144,9 +158,11 @@ export default function OnboardingPage() {
       </div>
 
       {/* İÇERİK */}
-      <div className="flex-1 overflow-y-auto pb-36">
-        <div className="max-w-5xl mx-auto px-8 py-10">
-          {buildPages()[currentStep]}
+      <div className="flex-1 overflow-y-auto pb-44">
+        <div className="w-full flex justify-center px-8 py-12">
+          <div className="w-full max-w-4xl">
+            {buildPages()[currentStep]}
+          </div>
         </div>
       </div>
 
@@ -155,11 +171,18 @@ export default function OnboardingPage() {
         className="fixed bottom-0 left-0 right-0 z-20 shadow-2xl"
         style={{ background: '#ffffff', borderTop: '2px solid #E5E7EB' }}
       >
-        <div className="max-w-5xl mx-auto px-8 py-5 flex justify-between items-center">
+        {finishError && (
+          <div className="w-full px-10 pt-4">
+            <div className="px-5 py-3 rounded-xl text-base font-medium" style={{ background: '#FEF2F2', color: '#DC2626', border: '1.5px solid #FCA5A5' }}>
+              ⚠️ {finishError}
+            </div>
+          </div>
+        )}
+        <div className="w-full px-10 py-6 flex gap-4 items-center justify-between">
           {currentStep > 0 ? (
             <button
               onClick={goBack}
-              className="flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-base cursor-pointer transition-all"
+              className="flex items-center justify-center gap-2 h-16 w-72 rounded-2xl font-bold text-lg cursor-pointer transition-all shrink-0"
               style={{ background: '#F3F4F6', color: '#374151', border: '2px solid #E5E7EB' }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = '#E5E7EB'
@@ -179,7 +202,7 @@ export default function OnboardingPage() {
           <button
             onClick={valid ? goNext : undefined}
             disabled={!valid || finishing}
-            className="flex items-center gap-2 px-12 py-4 rounded-2xl font-extrabold text-lg cursor-pointer transition-all text-white"
+            className="flex items-center justify-center gap-2 h-16 w-72 rounded-2xl font-extrabold text-xl cursor-pointer transition-all text-white shrink-0"
             style={{
               background: valid && !finishing
                 ? 'linear-gradient(135deg, #4F46E5, #6D28D9)'

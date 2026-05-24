@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -8,8 +9,11 @@ import '../core/app_theme.dart';
 import '../main.dart';
 import '../models/onboarding_data.dart';
 import '../models/quick_note.dart';
+import '../models/study_plan.dart';
 import '../models/subject_data.dart';
 import '../providers/study_plan_provider.dart';
+import '../services/api_service.dart';
+import '../services/app_state_service.dart';
 import '../services/token_service.dart';
 import '../services/user_prefs_service.dart';
 import '../widgets/quick_note_sheet.dart';
@@ -418,7 +422,9 @@ class _NotlarimSectionState extends ConsumerState<_NotlarimSection> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                // Alt safe area + nav bar boşluğu — Sil/Kapat butonları kapanmasın
+                padding: EdgeInsets.fromLTRB(
+                    16, 8, 16, 20 + MediaQuery.of(ctx).padding.bottom),
                 child: Row(
                   children: [
                     Expanded(
@@ -1154,9 +1160,30 @@ class _DersProfilimSectionState
       weakSubjects: _pendingWeak ?? data.weakSubjects,
       customSubjects: _pendingCustom ?? data.customSubjects,
     );
+
+    // Ders havuzu değişti mi? (sınav türü/alan veya güçlü/zayıf/custom listeleri)
+    final shapeChanged =
+        data.targetExam != newData.targetExam ||
+        data.selectedArea != newData.selectedArea ||
+        !_sameSet(data.strongSubjects, newData.strongSubjects) ||
+        !_sameSet(data.weakSubjects, newData.weakSubjects) ||
+        !_sameSet(data.customSubjects, newData.customSubjects);
+
     await UserPrefsService.saveOnboardingData(userId, newData.toJson());
+    // Profil değişikliğini backend'e de yaz — web aynı hesabı açtığında
+    // güncel profili ve yeni planı görsün.
+    try {
+      await ApiService().dio.post('/UserProfile', data: newData.toJson());
+    } catch (_) {}
     await resetStudyPlan(ref, userId);
     ref.read(manualTasksProvider.notifier).clearForDate(DateTime.now());
+
+    if (shapeChanged) {
+      // Yeni planın id'leri eski atamalar/tamamlamalarla eşleşmez — sıfırla.
+      ref.read(topicAssignmentsProvider.notifier).clearAll();
+      await ref.read(completedTaskIdsProvider.notifier).clearToday();
+    }
+
     ref.invalidate(onboardingDataProvider);
     ref.invalidate(todayTasksProvider);
 
@@ -1165,6 +1192,16 @@ class _DersProfilimSectionState
       _showSnack(context, 'Programın yenilendi! 🎉',
           bg: AppColors.success);
     }
+  }
+
+  // İki listenin sıra bağımsız eşit olup olmadığını kontrol eder.
+  static bool _sameSet(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    final sa = a.toSet();
+    for (final x in b) {
+      if (!sa.contains(x)) return false;
+    }
+    return true;
   }
 
   @override
@@ -1511,15 +1548,85 @@ class _ZamanBiyoritimSectionState
       weekendLatestTime: _weekendLatest,
     );
     await UserPrefsService.saveOnboardingData(userId, newData.toJson());
+    // Profil değişikliğini backend'e de yaz — web senkron olsun.
+    try {
+      await ApiService().dio.post('/UserProfile', data: newData.toJson());
+    } catch (_) {}
     await resetStudyPlan(ref, userId);
     ref.read(manualTasksProvider.notifier).clearForDate(DateTime.now());
     ref.invalidate(onboardingDataProvider);
     ref.invalidate(todayTasksProvider);
 
+    // Saat değişti — ders havuzu aynı ama yeni planda bazı bloklar kaybolmuş
+    // olabilir (program kısalmış). Bugünün completed_tasks/lessons
+    // kayıtlarını mevcut plan id'leriyle filtrele ki "ders detayı kaydedilmemiş"
+    // hayalet kayıt olmasın.
+    try {
+      final newPlan = await ref.read(studyPlanProvider.future);
+      final today = DateTime.now();
+      final todayDay = newPlan.firstWhere(
+        (d) =>
+            d.date.year == today.year &&
+            d.date.month == today.month &&
+            d.date.day == today.day,
+        orElse: StudyDay.empty,
+      );
+      final validIds = todayDay.blocks.map((b) => b.id).toSet();
+      await _trimCompletedToValidIds(userId, validIds);
+    } catch (_) {}
+
     if (mounted) {
       setState(() => _hasChanges = false);
       _showSnack(context, 'Programın yenilendi! 🎉',
           bg: AppColors.success);
+    }
+  }
+
+  /// Bugünün completed_tasks + completed_lessons kayıtlarından mevcut plan'da
+  /// bulunmayan id'leri çıkarır. Hem SharedPreferences hem backend'e senkron.
+  Future<void> _trimCompletedToValidIds(
+      String userId, Set<String> validIds) async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    final today =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    // completed_tasks_{today}
+    final taskKey = 'user_${userId}_completed_tasks_$today';
+    final rawTasks = prefs.getString(taskKey);
+    if (rawTasks != null) {
+      try {
+        final ids = (jsonDecode(rawTasks) as List).cast<String>();
+        final trimmed = ids
+            .where((id) => validIds.contains(id) || id.startsWith('manual-'))
+            .toList();
+        if (trimmed.length != ids.length) {
+          await prefs.setString(taskKey, jsonEncode(trimmed));
+          await AppStateService.pushAppState(
+              'completed_tasks_$today', trimmed);
+          ref.read(completedTaskIdsProvider.notifier).markAll(trimmed.toSet());
+        }
+      } catch (_) {}
+    }
+
+    // completed_lessons_{today}
+    final lessonKey = 'user_${userId}_completed_lessons_$today';
+    final rawLessons = prefs.getString(lessonKey);
+    if (rawLessons != null) {
+      try {
+        final list = (jsonDecode(rawLessons) as List)
+            .cast<Map<String, dynamic>>();
+        final trimmed = list
+            .where((l) =>
+                validIds.contains(l['id']) ||
+                (l['id'] as String).startsWith('manual-'))
+            .toList();
+        if (trimmed.length != list.length) {
+          await prefs.setString(lessonKey, jsonEncode(trimmed));
+          await AppStateService.pushAppState(
+              'completed_lessons_$today', trimmed);
+        }
+      } catch (_) {}
     }
   }
 
@@ -2063,7 +2170,23 @@ class _SinavTarihiSectionState
     if (_selectedDate == null) return;
     final userId = await TokenService.getUserId();
     if (userId == null) return;
+
+    // 1) Eski local key (geriye dönük cache)
     await UserPrefsService.saveExamDate(userId, _selectedDate!);
+
+    // 2) onboarding_data.examDate'i de güncelle — web bu alanı okur.
+    final currentMap = await UserPrefsService.getOnboardingData(userId);
+    if (currentMap != null) {
+      final updated = OnboardingData.fromJson(currentMap)
+          .copyWith(examDate: _selectedDate);
+      await UserPrefsService.saveOnboardingData(userId, updated.toJson());
+      // 3) Backend'e profil POST — web hydrate'te güncel veriyi alsın.
+      try {
+        await ApiService().dio.post('/UserProfile', data: updated.toJson());
+      } catch (_) {}
+      ref.invalidate(onboardingDataProvider);
+    }
+
     ref.invalidate(examCountdownProvider);
     if (mounted) {
       setState(() => _dateDirty = false);
@@ -2140,15 +2263,18 @@ class _SinavTarihiSectionState
                           area == 'sozel' ||
                           area == 'dil';
 
-                      final daysLeft = _selectedDate != null
-                          ? _selectedDate!
-                              .difference(DateTime.now())
-                              .inDays
-                          : (data?.examDate != null
-                              ? data!.examDate!
-                                  .difference(DateTime.now())
-                                  .inDays
-                              : null);
+                      // Anasayfa ile aynı: midnight-to-midnight farkı
+                      // (şu anki saatten değil), web ile uyumlu.
+                      int? computeDaysLeft(DateTime? d) {
+                        if (d == null) return null;
+                        final now = DateTime.now();
+                        final today =
+                            DateTime(now.year, now.month, now.day);
+                        final exam = DateTime(d.year, d.month, d.day);
+                        return exam.difference(today).inDays;
+                      }
+                      final daysLeft = computeDaysLeft(
+                          _selectedDate ?? data?.examDate);
 
                       const months = [
                         '',

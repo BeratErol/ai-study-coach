@@ -1,9 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../../models/study_plan.dart';
+import '../../providers/gelisimim_provider.dart';
 import '../../providers/study_plan_provider.dart';
 import '../../services/gelisimim_service.dart';
+import '../../services/token_service.dart';
 import 'gunluk_rapor_sheet.dart';
 
 class GecmisiGorCalendar extends ConsumerStatefulWidget {
@@ -203,10 +207,14 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
     final selectedDate = DateTime(day.year, day.month, day.day);
-    final isPast = selectedDate.isBefore(todayDate);
+    final isFuture = selectedDate.isAfter(todayDate);
 
-    // For today and future days: try to show the study plan
-    if (!isPast) {
+    // Geçmiş ve bugün → web ile aynı: tamamlanan/tamamlanmayan oturum raporu.
+    // Sadece gelecek günler "planlanan program" görünümünde açılır.
+    if (!isFuture) {
+      // Kullanıcının manuel "Dinlenme Modu" işaretlediği günler de off-day.
+      final restList = ref.read(restDaysProvider);
+      final dateStr = _toDateStr(day);
       final plan = ref.read(studyPlanProvider).value;
       if (plan != null) {
         StudyDay? studyDay;
@@ -218,54 +226,15 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
             break;
           }
         }
-        if (studyDay != null && studyDay.isOffDay) {
+        final isOff =
+            (studyDay?.isOffDay ?? false) || restList.contains(dateStr);
+        if (isOff) {
           showModalBottomSheet(
             context: context,
             isScrollControlled: true,
             useRootNavigator: true,
             backgroundColor: Colors.transparent,
-            builder: (_) => _OffDaySheet(day: studyDay!.date),
-          );
-          return;
-        }
-        if (studyDay != null && studyDay.blocks.isNotEmpty) {
-          final questionsDate =
-              selectedDate == todayDate ? _toDateStr(day) : null;
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            useRootNavigator: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => _GunlukPlanSheet(
-              day: studyDay!,
-              questionsDate: questionsDate,
-            ),
-          );
-          return;
-        }
-      }
-    }
-
-    // For past days in the current weekly plan: show plan + session summary
-    if (isPast) {
-      final plan = ref.read(studyPlanProvider).value;
-      if (plan != null) {
-        StudyDay? studyDay;
-        for (final d in plan) {
-          if (d.date.year == day.year &&
-              d.date.month == day.month &&
-              d.date.day == day.day) {
-            studyDay = d;
-            break;
-          }
-        }
-        if (studyDay != null && studyDay.isOffDay) {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            useRootNavigator: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => _OffDaySheet(day: studyDay!.date),
+            builder: (_) => _OffDaySheet(day: studyDay?.date ?? day),
           );
           return;
         }
@@ -279,6 +248,43 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
               day: studyDay!,
               questionsDate: _toDateStr(day),
               isPastDay: true,
+            ),
+          );
+          return;
+        }
+      }
+    } else {
+      // Gelecek gün → planı düz listele (tamamlama raporu yok)
+      final plan = ref.read(studyPlanProvider).value;
+      if (plan != null) {
+        StudyDay? studyDay;
+        for (final d in plan) {
+          if (d.date.year == day.year &&
+              d.date.month == day.month &&
+              d.date.day == day.day) {
+            studyDay = d;
+            break;
+          }
+        }
+        if (studyDay != null && studyDay.isOffDay) {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            useRootNavigator: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => _OffDaySheet(day: studyDay!.date),
+          );
+          return;
+        }
+        if (studyDay != null && studyDay.blocks.isNotEmpty) {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            useRootNavigator: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => _GunlukPlanSheet(
+              day: studyDay!,
+              questionsDate: null,
             ),
           );
           return;
@@ -346,11 +352,22 @@ class _GunlukPlanSheet extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      '$dateLabel — ${isToday ? 'Bugünün Planı' : isPastDay ? 'Geçmiş Gün' : 'Çalışma Planı'}',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w800),
-                    ),
+                    child: Builder(builder: (_) {
+                      final now = DateTime.now();
+                      final isToday2 = day.date.year == now.year &&
+                          day.date.month == now.month &&
+                          day.date.day == now.day;
+                      final title = isToday2
+                          ? 'Bugünün Raporu'
+                          : isPastDay
+                              ? 'Geçmiş Gün'
+                              : 'Çalışma Planı';
+                      return Text(
+                        '$dateLabel — $title',
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w800),
+                      );
+                    }),
                   ),
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
@@ -364,7 +381,10 @@ class _GunlukPlanSheet extends StatelessWidget {
             Expanded(
               child: ListView(
                 controller: controller,
-                padding: const EdgeInsets.all(20),
+                // Alt safe area + telefon nav bar'ı için ek boşluk — son içerik
+                // ekran altında kalmasın.
+                padding: EdgeInsets.fromLTRB(
+                    20, 20, 20, 20 + MediaQuery.of(context).padding.bottom + 24),
                 children: [
                   // Plan blocks
                   ...List.generate(day.blocks.length, (i) {
@@ -586,12 +606,51 @@ class _PastDayReportSection extends StatefulWidget {
 
 class _PastDayReportSectionState extends State<_PastDayReportSection> {
   final _service = GelisimimService();
-  late Future<DailyReport> _future;
+  late Future<_PastDayData> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = _service.getDailyReport(widget.date);
+    _future = _load();
+  }
+
+  Future<_PastDayData> _load() async {
+    DailyReport? report;
+    try {
+      report = await _service.getDailyReport(widget.date);
+    } catch (_) {}
+
+    // SharedPreferences'tan o günün tamamlanan ders id'leri + detayları
+    final userId = await TokenService.getUserId();
+    final prefs = await SharedPreferences.getInstance();
+    final ids = <String>{};
+    final lessons = <CompletedLessonRecord>[];
+    if (userId != null) {
+      final idKey = 'user_${userId}_completed_tasks_${widget.date}';
+      final idRaw = prefs.getString(idKey);
+      if (idRaw != null) {
+        try {
+          ids.addAll((jsonDecode(idRaw) as List).cast<String>());
+        } catch (_) {}
+      } else {
+        ids.addAll(prefs.getStringList(idKey) ?? const []);
+      }
+      // Eski format (yedek)
+      final legacyKey = 'completed_tasks_${userId}_${widget.date}';
+      final legacy = prefs.getStringList(legacyKey);
+      if (legacy != null) ids.addAll(legacy);
+
+      final lessonKey = 'user_${userId}_completed_lessons_${widget.date}';
+      final lessonRaw = prefs.getString(lessonKey);
+      if (lessonRaw != null) {
+        try {
+          lessons.addAll((jsonDecode(lessonRaw) as List).map(
+              (e) => CompletedLessonRecord.fromJson(e as Map<String, dynamic>)));
+        } catch (_) {}
+      }
+    }
+
+    return _PastDayData(report: report, completedIds: ids, lessons: lessons);
   }
 
   String _fmt(TimeOfDay t) =>
@@ -601,14 +660,28 @@ class _PastDayReportSectionState extends State<_PastDayReportSection> {
   Widget build(BuildContext context) {
     final studyBlocks = widget.blocks.where((b) => !b.isMola).toList();
 
-    return FutureBuilder<DailyReport>(
+    return FutureBuilder<_PastDayData>(
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
+        final data = snap.data;
+        final report = data?.report;
+        final completedIds = data?.completedIds ?? const <String>{};
+        final lessons = data?.lessons ?? const <CompletedLessonRecord>[];
 
-        final report = snap.data;
+        // Tamamlanmayan: plan bloğu tamamlanan id setinde yoksa
+        final missed = studyBlocks
+            .where((b) => !completedIds.contains(b.id))
+            .toList();
+        // Detayı bilinmeyen orphan id'ler (mola/manual hariç)
+        final lessonIds = lessons.map((l) => l.id).toSet();
+        final orphans = completedIds
+            .where((id) =>
+                !id.startsWith('m_') &&
+                !lessonIds.contains(id))
+            .toList();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -616,94 +689,104 @@ class _PastDayReportSectionState extends State<_PastDayReportSection> {
             const Divider(),
             const SizedBox(height: 8),
 
-            // ── Planlanan oturumlar ──
-            const Row(
-              children: [
-                Text('📋', style: TextStyle(fontSize: 18)),
-                SizedBox(width: 8),
+            // ── Tamamlanan Dersler ──
+            if (lessons.isNotEmpty) ...[
+              const Row(
+                children: [
+                  Text('✅', style: TextStyle(fontSize: 18)),
+                  SizedBox(width: 8),
+                  Text('Tamamlanan Dersler',
+                      style: TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700)),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ...lessons.map((l) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Text(l.emoji, style: const TextStyle(fontSize: 18)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            l.topicName != null
+                                ? '${l.subjectName} — ${l.topicName}'
+                                : l.subjectName,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Text('${l.durationMinutes} dk',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey)),
+                      ],
+                    ),
+                  )),
+              if (orphans.isNotEmpty) ...[
+                const SizedBox(height: 4),
                 Text(
-                  'Planlanan Oturumlar',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                  '+ ${orphans.length} tamamlanmış görev (ders detayı kaydedilmemiş)',
+                  style: TextStyle(
+                      fontSize: 11, color: Colors.grey.shade500),
                 ),
               ],
-            ),
-            const SizedBox(height: 10),
-            if (studyBlocks.isEmpty)
-              Text('Bu gün için planlanan ders yok.',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade500))
-            else
-              ...studyBlocks.map((b) {
-                final completed = report != null &&
-                    report.tasks.completed > studyBlocks.indexOf(b);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: completed
-                              ? Colors.green
-                              : Colors.grey.shade200,
-                          border: Border.all(
-                            color: completed
-                                ? Colors.green
-                                : Colors.grey.shade400,
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Icon(
-                          completed ? Icons.check : Icons.close,
-                          size: 14,
-                          color: completed
-                              ? Colors.white
-                              : Colors.grey.shade500,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          b.subjectName,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            decoration: completed
-                                ? TextDecoration.lineThrough
-                                : null,
-                            color: completed
-                                ? Colors.grey.shade500
-                                : Theme.of(context).textTheme.bodyLarge?.color,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '${_fmt(b.startTime)} – ${_fmt(b.endTime)}',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade500),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-
-            // ── Soru çözümü ──
-            if (report != null && report.questions.isNotEmpty) ...[
               const SizedBox(height: 16),
+            ],
+
+            // ── Tamamlanmayan Oturumlar ──
+            if (missed.isNotEmpty) ...[
+              const Row(
+                children: [
+                  Text('⏳', style: TextStyle(fontSize: 18)),
+                  SizedBox(width: 8),
+                  Text('Tamamlanmayan Oturumlar',
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFEF4444))),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ...missed.map((b) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Opacity(
+                      opacity: 0.7,
+                      child: Row(
+                        children: [
+                          Text(b.emoji, style: const TextStyle(fontSize: 18)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(b.subjectName,
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                          Text('${_fmt(b.startTime)} – ${_fmt(b.endTime)}',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade500)),
+                        ],
+                      ),
+                    ),
+                  )),
+              const SizedBox(height: 16),
+            ],
+
+            // ── Soru çözümleri ──
+            if (report != null && report.questions.isNotEmpty) ...[
               const Divider(),
               const SizedBox(height: 8),
               Row(
                 children: [
                   const Text('📝', style: TextStyle(fontSize: 18)),
                   const SizedBox(width: 8),
-                  const Text(
-                    'Çözülen Sorular',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                  ),
+                  const Text('Çözülen Sorular',
+                      style: TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700)),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFFEEF2FF),
                       borderRadius: BorderRadius.circular(20),
@@ -729,13 +812,11 @@ class _PastDayReportSectionState extends State<_PastDayReportSection> {
                             style: const TextStyle(
                                 fontSize: 14, fontWeight: FontWeight.w500)),
                       ),
-                      Text(
-                        '${q.count} soru',
-                        style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.indigo.shade500),
-                      ),
+                      Text('${q.count} soru',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.indigo.shade500)),
                     ],
                   ),
                 ),
@@ -746,6 +827,17 @@ class _PastDayReportSectionState extends State<_PastDayReportSection> {
       },
     );
   }
+}
+
+class _PastDayData {
+  final DailyReport? report;
+  final Set<String> completedIds;
+  final List<CompletedLessonRecord> lessons;
+  const _PastDayData({
+    required this.report,
+    required this.completedIds,
+    required this.lessons,
+  });
 }
 
 // ─── Off-day sheet ────────────────────────────────────────────────────────────

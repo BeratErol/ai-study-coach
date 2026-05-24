@@ -17,6 +17,7 @@ namespace Backend.Data
         public DbSet<ExamDetail> ExamDetails { get; set; } = null!;
         public DbSet<UserProfile> UserProfiles { get; set; } = null!;
         public DbSet<QuestionLog> QuestionLogs { get; set; } = null!;
+        public DbSet<AppState> AppStates { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -181,6 +182,27 @@ namespace Backend.Data
                     .HasDatabaseName("idx_soru_log_unique");
             });
             modelBuilder.Entity<QuestionLog>().ToTable("soru_kayitlari");
+
+            // AppState configuration — cihazdan bağımsız generic key-value deposu
+            modelBuilder.Entity<AppState>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.UserId).HasColumnName("kullanici_id").IsRequired();
+                entity.Property(e => e.Key).HasColumnName("anahtar").IsRequired().HasMaxLength(120);
+                entity.Property(e => e.ValueJson).HasColumnName("deger_json").IsRequired();
+                entity.Property(e => e.UpdatedAt).HasColumnName("guncelleme_tarihi").HasDefaultValueSql("NOW()");
+
+                entity.HasOne(d => d.User)
+                    .WithMany()
+                    .HasForeignKey(d => d.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(e => new { e.UserId, e.Key })
+                    .IsUnique()
+                    .HasDatabaseName("idx_app_state_unique");
+            });
+            modelBuilder.Entity<AppState>().ToTable("uygulama_durumu");
 
             // ExamDetail configuration
             modelBuilder.Entity<ExamDetail>(entity =>

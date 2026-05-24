@@ -22,10 +22,16 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Ekrana her geçişte canlı veriyi yenile — yeni tamamlanan görevler,
+      // eklenen sorular ve günlere göre tamamlananlar anında yansısın.
       ref.invalidate(xpInfoProvider);
       ref.invalidate(gelisimimStatsProvider('all'));
       ref.invalidate(gelisimimStatsProvider('today'));
       ref.invalidate(lessonDistributionProvider('all'));
+      ref.invalidate(lessonDistributionProvider('today'));
+      ref.invalidate(localAllTimeStatsProvider);
+      ref.invalidate(completedLessonsByDayProvider);
+      ref.invalidate(questionsByDayProvider);
     });
   }
 
@@ -69,6 +75,10 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
                     statsAsync.when(
                       data: (s) {
                         final pastLocal = localAllAsync.value;
+                        // Dinlenme: kullanıcının açıkça işaretlediği günler
+                        // (rest_days listesi). Bugün filtresi → bugün rest mi,
+                        // tüm zamanlar → liste uzunluğu.
+                        final restList = ref.watch(restDaysProvider);
                         final merged = filter == 'today'
                             ? GelisimimStats(
                                 completedTasks: localStats.completedTasks,
@@ -84,7 +94,7 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
                                     localStats.totalMinutes +
                                     (pastLocal?.totalMinutes ?? 0),
                                 totalQuestions: s.totalQuestions,
-                                restDays: s.restDays + localStats.restDays,
+                                restDays: restList.length,
                               );
                         return _StatsGrid(stats: merged);
                       },
@@ -102,27 +112,34 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
                           ref.read(activeFilterProvider.notifier).state = v,
                     ),
                     const SizedBox(height: 24),
-                    // ── Ders Dağılımı: önce tamamlananlar, sonra soru çözümleri ──
+                    // ── Ders Dağılımı (tamamlanan dersler) ──
                     Text('Ders Dağılımı',
                         style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
                             color: Theme.of(context).textTheme.bodyLarge?.color)),
                     const SizedBox(height: 12),
-                    const _CompletedLessonsSection(),
+                    filter == 'today'
+                        ? const _CompletedLessonsSection()
+                        : const _CompletedLessonsByDaySection(),
                     const SizedBox(height: 20),
+                    // ── Soru Çözümleri ──
                     Text('Soru Çözümleri',
                         style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
                             color: Theme.of(context).textTheme.bodyLarge?.color)),
                     const SizedBox(height: 12),
-                    distAsync.when(
-                      data: (list) => _LessonDistribution(items: list),
-                      loading: () => const _DistSkeleton(),
-                      error: (e, st) => _LessonDistribution(items: const []),
-                    ),
-                    const SizedBox(height: 100),
+                    if (filter == 'today')
+                      distAsync.when(
+                        data: (list) => _LessonDistribution(items: list),
+                        loading: () => const _DistSkeleton(),
+                        error: (e, st) => _LessonDistribution(items: const []),
+                      )
+                    else
+                      const _QuestionsByDaySection(),
+                    // Alt nav bar + safe area + FAB boşluğu — son içerik kapanmasın
+                    SizedBox(height: 100 + MediaQuery.of(context).padding.bottom),
                   ],
                 ),
               ),
@@ -927,4 +944,273 @@ class _NoteFab extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Tüm Zamanlar: günlere göre tamamlanan dersler ───────────────────────────
+
+class _CompletedLessonsByDaySection extends ConsumerWidget {
+  const _CompletedLessonsByDaySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final daysAsync = ref.watch(completedLessonsByDayProvider);
+    return daysAsync.when(
+      loading: () => Container(
+        height: 120,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (days) {
+        if (days.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.check_circle_outline_rounded,
+                    size: 48, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                const Text('Henüz tamamlanan ders yok.',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary)),
+              ],
+            ),
+          );
+        }
+        final todayStr = _todayStr();
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final entry in days) ...[
+                _DayHeaderChip(
+                    date: entry.date,
+                    todayStr: todayStr,
+                    count: entry.lessons.length,
+                    suffix: 'ders'),
+                const SizedBox(height: 8),
+                ...entry.lessons.map((l) => _SimpleLessonRow(lesson: l)),
+                const SizedBox(height: 14),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SimpleLessonRow extends StatelessWidget {
+  final CompletedLessonRecord lesson;
+  const _SimpleLessonRow({required this.lesson});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(lesson.emoji, style: const TextStyle(fontSize: 18)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  lesson.topicName != null
+                      ? '${lesson.subjectName} — ${lesson.topicName}'
+                      : lesson.subjectName,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                Text(_typeLabel(lesson.taskType),
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textHint)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('${lesson.durationMinutes} dk',
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+
+  static String _typeLabel(String t) {
+    switch (t) {
+      case 'konu_anlatimi': return 'Konu Anlatımı';
+      case 'soru_cozumu': return 'Soru Çözümü';
+      case 'deneme': return 'Deneme Sınavı';
+      case 'tekrar': return 'Tekrar';
+      default: return t;
+    }
+  }
+}
+
+// ─── Tüm Zamanlar: günlere göre soru çözümleri ────────────────────────────
+
+class _QuestionsByDaySection extends ConsumerWidget {
+  const _QuestionsByDaySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final daysAsync = ref.watch(questionsByDayProvider);
+    return daysAsync.when(
+      loading: () => Container(
+        height: 120,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (days) {
+        if (days.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.pie_chart_outline_rounded,
+                    size: 48, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                const Text('Henüz çözülen soru yok.',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary)),
+              ],
+            ),
+          );
+        }
+        final todayStr = _todayStr();
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final entry in days) ...[
+                _DayHeaderChip(
+                    date: entry.date,
+                    todayStr: todayStr,
+                    count: entry.questions.fold<int>(0, (s, q) => s + q.count),
+                    suffix: 'soru'),
+                const SizedBox(height: 8),
+                ..._sortedQ(entry.questions, (q) => q.count, descending: true)
+                    .map((q) => _DistRow(
+                          item: LessonDistribution(
+                              lessonName: q.subjectName,
+                              totalQuestions: q.count),
+                          max: _maxCount(entry.questions),
+                        )),
+                const SizedBox(height: 14),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static int _maxCount(List<DailyQuestion> list) =>
+      list.isEmpty ? 1 : list.map((q) => q.count).reduce((a, b) => a > b ? a : b);
+
+  static List<DailyQuestion> _sortedQ(
+      List<DailyQuestion> list, int Function(DailyQuestion) k,
+      {bool descending = false}) {
+    final out = [...list];
+    out.sort((a, b) => descending ? k(b) - k(a) : k(a) - k(b));
+    return out;
+  }
+}
+
+// ─── Gün başlık chip'i ───────────────────────────────────────────────────────
+
+class _DayHeaderChip extends StatelessWidget {
+  final String date; // YYYY-MM-DD
+  final String todayStr;
+  final int count;
+  final String suffix;
+
+  const _DayHeaderChip({
+    required this.date,
+    required this.todayStr,
+    required this.count,
+    required this.suffix,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = date == todayStr ? 'Bugün' : _formatTr(date);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary)),
+          ),
+          const SizedBox(width: 8),
+          Text('$count $suffix',
+              style: const TextStyle(
+                  fontSize: 11, color: AppColors.textHint)),
+        ],
+      ),
+    );
+  }
+
+  static const _months = [
+    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
+  ];
+  static const _weekdays = [
+    'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'
+  ];
+
+  static String _formatTr(String iso) {
+    try {
+      final d = DateTime.parse(iso);
+      return '${d.day} ${_months[d.month - 1]} ${_weekdays[d.weekday - 1]}';
+    } catch (_) {
+      return iso;
+    }
+  }
+}
+
+String _todayStr() {
+  final d = DateTime.now();
+  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }

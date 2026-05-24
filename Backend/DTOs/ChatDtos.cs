@@ -16,6 +16,8 @@ namespace Backend.DTOs
         public int DurationMinutes { get; set; }
         public string StartTime { get; set; } = string.Empty;
         public string EndTime { get; set; } = string.Empty;
+        /// <summary>Kullanıcı bu görevi tamamladı mı? (client tarafından gönderilir)</summary>
+        public bool IsCompleted { get; set; }
     }
 
     public class ChatRequestDto

@@ -44,48 +44,10 @@ namespace Backend.Controllers
             var totalMinutes = await sessionQ.SumAsync(s => (int?)s.DurationMinutes) ?? 0;
             var totalQuestions = await questionQ.SumAsync(q => (int?)q.Count) ?? 0;
 
+            // Dinlenme sayacı backend'de otomatik hesaplanmaz.
+            // Kullanıcının client tarafında "bugün dinleneceğim" diye açıkça
+            // işaretlediği günler (rest_days AppState) sayılır — client merge eder.
             int restDays = 0;
-            if (filter == "all")
-            {
-                var firstSessionDate = await _db.StudySessions
-                    .Where(s => s.UserId == userId)
-                    .OrderBy(s => s.Date)
-                    .Select(s => (DateTime?)s.Date)
-                    .FirstOrDefaultAsync();
-
-                var firstQuestionDate = await _db.QuestionLogs
-                    .Where(q => q.UserId == userId)
-                    .OrderBy(q => q.Date)
-                    .Select(q => q.Date)
-                    .FirstOrDefaultAsync();
-
-                DateTime? firstActivity = firstSessionDate?.Date;
-                if (firstQuestionDate != null &&
-                    DateTime.TryParse(firstQuestionDate, out var fq))
-                {
-                    if (firstActivity == null || fq.Date < firstActivity)
-                        firstActivity = fq.Date;
-                }
-
-                if (firstActivity.HasValue)
-                {
-                    var sessionDays = await _db.StudySessions
-                        .Where(s => s.UserId == userId)
-                        .Select(s => s.Date.Date.ToString("yyyy-MM-dd"))
-                        .Distinct().ToListAsync();
-
-                    var questionDays = await _db.QuestionLogs
-                        .Where(q => q.UserId == userId)
-                        .Select(q => q.Date)
-                        .Distinct().ToListAsync();
-
-                    var activeDays = new HashSet<string>(sessionDays);
-                    foreach (var d in questionDays) activeDays.Add(d);
-
-                    var totalDays = (today - firstActivity.Value.Date).Days + 1;
-                    restDays = Math.Max(0, totalDays - activeDays.Count);
-                }
-            }
 
             return Ok(new GelisimimStatsDto
             {
@@ -170,7 +132,8 @@ namespace Backend.Controllers
         public async Task<IActionResult> GetCalendar([FromQuery] int year, [FromQuery] int month)
         {
             var userId = GetUserId();
-            var startDate = new DateTime(year, month, 1);
+            // Npgsql timestamptz sütunlarıyla uyumluluk için UTC Kind zorunlu
+            var startDate = DateTime.SpecifyKind(new DateTime(year, month, 1), DateTimeKind.Utc);
             var endDate = startDate.AddMonths(1);
             // "yyyy-MM" prefix — ISO dates sort lexicographically so StartsWith works for month filter
             var monthPrefix = $"{year}-{month:D2}";

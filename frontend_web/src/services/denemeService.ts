@@ -1,24 +1,10 @@
 import api from './api'
 
-// ─── Backend ile birebir uyumlu tipler ──────────────────────────────────────
-
-export interface ExamSubjectInput {
-  name: string
+export interface ExamDetail {
+  id: number
+  lessonName: string
   correct: number
-  wrong: number
-}
-
-export interface CreateExamDto {
-  title: string
-  date: string
-  type: string
-  subjects: ExamSubjectInput[]
-}
-
-export interface ExamSubjectNet {
-  subjectName: string
-  correct: number
-  wrong: number
+  incorrect: number
   net: number
 }
 
@@ -28,52 +14,39 @@ export interface ExamRecord {
   date: string
   type: string
   totalNet: number
-  subjectNets: ExamSubjectNet[]
+  details: ExamDetail[]
 }
 
-// Backend ExamResponseDto → web ExamRecord
-interface BackendExamDetail {
-  id: number
-  lessonName: string
-  correct: number
-  incorrect: number
-  net: number
+// Form → backend gövdesi
+export interface CreateExamBody {
+  title: string
+  date: string
+  type: string
+  details: { lessonName: string; correct: number; incorrect: number }[]
 }
+
 interface BackendExam {
   id: number
   title: string
   date: string
   type: string
   totalNet: number
-  details: BackendExamDetail[]
+  details: ExamDetail[]
 }
 
-function normalizeExam(e: BackendExam): ExamRecord {
+function normalize(e: BackendExam): ExamRecord {
   return {
     id: e.id,
     title: e.title ?? '',
     date: e.date,
     type: e.type ?? '',
     totalNet: e.totalNet ?? 0,
-    subjectNets: (e.details ?? []).map((d) => ({
-      subjectName: d.lessonName,
+    details: (e.details ?? []).map((d) => ({
+      id: d.id,
+      lessonName: d.lessonName,
       correct: d.correct,
-      wrong: d.incorrect,
+      incorrect: d.incorrect,
       net: d.net,
-    })),
-  }
-}
-
-// web CreateExamDto → backend CreateExamDto gövdesi
-function toBackendBody(dto: CreateExamDto) {
-  return {
-    title: dto.title,
-    date: dto.date,
-    type: dto.type,
-    details: dto.subjects.map((s) => ({
-      lessonName: s.name,
-      correct: s.correct,
-      incorrect: s.wrong,
     })),
   }
 }
@@ -81,12 +54,15 @@ function toBackendBody(dto: CreateExamDto) {
 export const denemeService = {
   async getAll(): Promise<ExamRecord[]> {
     const res = await api.get('/Exam')
-    const list = (res.data ?? []) as BackendExam[]
-    return list.map(normalizeExam)
+    return ((res.data ?? []) as BackendExam[]).map(normalize)
   },
-  async create(dto: CreateExamDto): Promise<ExamRecord> {
-    const res = await api.post('/Exam', toBackendBody(dto))
-    return normalizeExam(res.data as BackendExam)
+  async create(body: CreateExamBody): Promise<ExamRecord> {
+    const res = await api.post('/Exam', body)
+    return normalize(res.data as BackendExam)
+  },
+  async update(id: number, body: CreateExamBody): Promise<ExamRecord> {
+    const res = await api.put(`/Exam/${id}`, body)
+    return normalize(res.data as BackendExam)
   },
   delete: (id: number) => api.delete(`/Exam/${id}`),
   async getAiRecommendation(): Promise<string> {

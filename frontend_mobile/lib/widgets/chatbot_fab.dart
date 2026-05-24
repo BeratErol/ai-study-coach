@@ -424,15 +424,28 @@ class _ChatbotSheetState extends ConsumerState<ChatbotSheet> {
 
     if (messages.isNotEmpty) _scrollToBottom();
 
+    final screenH = MediaQuery.of(context).size.height;
+    final keyboardH = MediaQuery.of(context).viewInsets.bottom;
+    // Sheet sabit %80 yükseklik; klavye açılınca aynı boyutu koruyup
+    // klavye yüksekliği kadar yukarı kaydırılır → sohbet listesi görünür kalır.
+    final sheetH = (screenH * 0.80).clamp(360.0, screenH - 40);
+
     return ScaffoldMessenger(
       key: _messengerKey,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: DraggableScrollableSheet(
-          initialChildSize: 0.75,
-          minChildSize: 0.4,
-          maxChildSize: 0.92,
-          builder: (_, scrollCtrl) => Container(
+        // resizeToAvoidBottomInset: false — body yüksekliği klavyeden bağımsız
+        // kalsın; klavye telafisini sheet'in margin'i ile yapıyoruz.
+        resizeToAvoidBottomInset: false,
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: AnimatedPadding(
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+            padding: EdgeInsets.only(bottom: keyboardH),
+            child: SizedBox(
+              height: sheetH,
+              child: Container(
             decoration: BoxDecoration(
               color: Theme.of(context).scaffoldBackgroundColor,
               borderRadius:
@@ -530,11 +543,16 @@ class _ChatbotSheetState extends ConsumerState<ChatbotSheet> {
                 // ── Input ────────────────────────────────────────────────────
                 if (!_showConvList)
                   Container(
+                    // Sheet zaten AnimatedPadding ile klavyenin üstüne kayıyor;
+                    // burada sadece güvenli alan + sabit boşluk yeter.
                     padding: EdgeInsets.fromLTRB(
-                        16,
-                        8,
-                        16,
-                        MediaQuery.of(context).viewInsets.bottom + 16),
+                      16,
+                      8,
+                      16,
+                      MediaQuery.of(context).viewInsets.bottom > 0
+                          ? 10
+                          : MediaQuery.of(context).padding.bottom + 12,
+                    ),
                     decoration: BoxDecoration(
                       color: Theme.of(context).scaffoldBackgroundColor,
                       border: Border(
@@ -542,12 +560,16 @@ class _ChatbotSheetState extends ConsumerState<ChatbotSheet> {
                               BorderSide(color: Theme.of(context).dividerColor)),
                     ),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Expanded(
                           child: TextField(
                             controller: _textCtrl,
-                            maxLines: 3,
+                            // 2 görünür satır; daha uzun metin TextField içinde
+                            // kaydırılır — Column'a taşma yansımaz.
+                            maxLines: 2,
                             minLines: 1,
+                            keyboardType: TextInputType.multiline,
                             textInputAction: TextInputAction.send,
                             onSubmitted: (_) => _send(),
                             decoration: InputDecoration(
@@ -600,6 +622,8 @@ class _ChatbotSheetState extends ConsumerState<ChatbotSheet> {
                   ),
               ],
             ),
+          ),
+          ),
           ),
         ),
       ),

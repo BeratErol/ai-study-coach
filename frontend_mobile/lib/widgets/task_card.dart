@@ -151,35 +151,39 @@ class TaskCard extends ConsumerWidget {
                 ),
               ),
             ),
-            // Lock icon or checkbox
-            if (isLocked)
-              Icon(Icons.lock_outline, size: 20, color: subTextColor)
-            else
-              GestureDetector(
-                onTap: () {
-                  final notifier = ref.read(completedTaskIdsProvider.notifier);
-                  if (isCompleted) {
-                    notifier.unmark(task.id);
-                  } else {
-                    notifier.mark(task.id);
-                  }
-                },
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isCompleted ? Colors.green : Colors.transparent,
-                    border: Border.all(
-                      color: isCompleted ? Colors.green : subTextColor.withValues(alpha: 0.4),
-                      width: 2,
+            // Lock icon or checkbox — readOnly modda ve mola görevlerinde
+            // hiçbiri gösterilmez (mola tamamlama gerektirmez).
+            if (!readOnly && !isMola)
+              if (isLocked)
+                Icon(Icons.lock_outline, size: 20, color: subTextColor)
+              else
+                GestureDetector(
+                  onTap: () {
+                    final notifier = ref.read(completedTaskIdsProvider.notifier);
+                    if (isCompleted) {
+                      notifier.unmark(task.id);
+                    } else {
+                      // Ders detayını da yaz — Gelişimim günlük gruplama bunu okur.
+                      notifier.mark(task.id,
+                          task: task.copyWith(topicName: topicName));
+                    }
+                  },
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isCompleted ? Colors.green : Colors.transparent,
+                      border: Border.all(
+                        color: isCompleted ? Colors.green : subTextColor.withValues(alpha: 0.4),
+                        width: 2,
+                      ),
                     ),
+                    child: isCompleted
+                        ? const Icon(Icons.check, size: 14, color: Colors.white)
+                        : null,
                   ),
-                  child: isCompleted
-                      ? const Icon(Icons.check, size: 14, color: Colors.white)
-                      : null,
                 ),
-              ),
           ],
         ),
       ),
