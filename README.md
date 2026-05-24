@@ -354,13 +354,6 @@ cd frontend_mobile && flutter analyze
 
 ---
 
-## 🤝 Lisans
+## 👨‍💻 Geliştirici
 
-MIT — Detay için [LICENSE](LICENSE).
-
----
-
-## 🙏 Teşekkür
-
-- **Google Gemini API** — AI koç ve plan önerileri için.
-- **Material Design Icons**, **Tailwind**, **Riverpod**, **Recharts** topluluklarına.
+**Berat Erol**
