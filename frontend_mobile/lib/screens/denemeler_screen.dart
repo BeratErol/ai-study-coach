@@ -101,12 +101,25 @@ class _DenemeScreenState extends ConsumerState<DenemeScreen> {
       } else {
         allowed = ['TYT', 'AYT_SAYISAL', 'AYT_EA', 'AYT_SOZEL', 'AYT_DIL', 'BRANS'];
       }
+    } else if (exam == 'TYT') {
+      allowed = ['TYT'];
+    } else if (exam == 'AYT') {
+      allowed = ['AYT_SAYISAL', 'AYT_EA', 'AYT_SOZEL', 'AYT_DIL', 'BRANS'];
+    } else if (exam == 'YDT') {
+      allowed = ['AYT_DIL'];
     } else if (exam == 'KPSS') {
       allowed = ['KPSS_LISANS', 'BRANS'];
     } else if (exam == 'LGS') {
       allowed = ['LGS', 'BRANS'];
+    } else if (exam == 'ALES') {
+      allowed = ['ALES'];
+    } else if (exam == 'YDS') {
+      allowed = ['YDS'];
+    } else if (exam == 'ÖĞRETMENLIK' || exam == 'OGRETMENLIK' || exam == 'ÖĞRETMENLİK') {
+      allowed = ['AGS', 'OABT'];
     } else {
-      return kExamTypes;
+      // Bilinmeyen sınav — "tüm türleri göster" fallback'i yok.
+      return const [];
     }
     return kExamTypes.where((t) => allowed.contains(t.apiType)).toList();
   }
@@ -257,7 +270,12 @@ class _DenemeScreenState extends ConsumerState<DenemeScreen> {
       body: examsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Hata: $e')),
-        data: (allExams) {
+        data: (rawExams) {
+          // Sınava ait olmayan eski deneme kayıtlarını gizle.
+          final allowedApi = _cachedAvailableTypes.map((t) => t.apiType).toSet();
+          final allExams = rawExams
+              .where((e) => allowedApi.contains(e['type'] as String? ?? ''))
+              .toList();
           if (allExams.isEmpty) return _EmptyBody(onAdd: _showAddModal);
 
           // Mevcut türler (sadece gerçekte var olanlar)
@@ -268,14 +286,15 @@ class _DenemeScreenState extends ConsumerState<DenemeScreen> {
               .toList()
             ..sort();
 
-          // İlk yüklemede ilk türü otomatik seç
-          if (_filterType == null && types.isNotEmpty) {
-            _filterType = types.first;
+          // İlk yüklemede ilk türü otomatik seç. Önceki seçim bu sınava ait
+          // değilse de düşür.
+          if (_filterType == null || !types.contains(_filterType)) {
+            _filterType = types.isNotEmpty ? types.first : null;
           }
 
           // Filtre uygula
           final filtered = _filterType == null
-              ? allExams
+              ? <Map<String, dynamic>>[]
               : allExams.where((e) => (e['type'] as String?) == _filterType).toList();
 
           final isBrans = _filterType == 'BRANS';
@@ -1374,67 +1393,53 @@ class _RadarWithLabels extends StatelessWidget {
             ),
           ),
 
-          // Etiketler: fl_chart ile aynı formül, grafik alanı = (genişlik-2*hPad) x chartH
-          // Merkez: (totalWidth/2, vPad + chartH/2)
-          // r = min((genişlik-2*hPad)/2, chartH/2) * 0.8
-          // Genişlik bilinmiyor build time'da → LayoutBuilder kullan
-          ...labels.map((l) {
-            // Yön bazlı sabit konumlandırma: cos/sin eşiğine göre
-            final bool isTop    = l.sinA < -0.5;
-            final bool isBottom = l.sinA >  0.5;
-            final bool isRight  = l.cosA >  0.5;
-            final bool isLeft   = l.cosA < -0.5;
-
-            if (isTop) {
-              return Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: Center(child: _label(context, l.name)),
-              );
-            }
-            if (isBottom) {
-              return Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Center(child: _label(context, l.name)),
-              );
-            }
-            if (isRight) {
-              return Positioned(
-                right: 0,
-                top: vPad,
-                bottom: vPad,
-                width: hPad - 4,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: _label(context, l.name, align: TextAlign.left),
-                ),
-              );
-            }
-            if (isLeft) {
-              return Positioned(
-                left: 0,
-                top: vPad,
-                bottom: vPad,
-                width: hPad - 4,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: _label(context, l.name, align: TextAlign.right),
-                ),
-              );
-            }
-            // Köşe (diagonal) — ağırlıklı konumlandırma
-            final bool diagTop   = l.sinA < 0;
-            final bool diagRight = l.cosA > 0;
-            return Positioned(
-              top:    diagTop   ? 0         : null,
-              bottom: diagTop   ? null      : 0,
-              left:   diagRight ? null      : 0,
-              right:  diagRight ? 0         : null,
-              child: _label(context, l.name,
-                  align: diagRight ? TextAlign.right : TextAlign.left),
+          // Etiketler: her köşe için ayrı bir konum hesaplanır.
+          // fl_chart radar polygon vertex'leri ile aynı açılarda; merkez
+          // (W/2, vPad + chartH/2), yarıçap min((W-2*hPad)/2, chartH/2)*0.8.
+          // LayoutBuilder ile gerçek genişliği alıp her etiketi vertex'in
+          // yanına yerleştiriyoruz, böylece çakışma olmuyor.
+          LayoutBuilder(builder: (ctx, c) {
+            final double w = c.maxWidth;
+            final double cx = w / 2;
+            final double cy = vPad + chartH / 2;
+            // fl_chart polygon radar etkili yarıçap (~0.85 deneysel).
+            final double r = math.min((w - 2 * hPad) / 2, chartH / 2) * 0.92;
+            const double labelW = 90;
+            const double labelH = 22;
+            return Stack(
+              children: labels.map((l) {
+                final double vx = cx + r * l.cosA;
+                final double vy = cy + r * l.sinA;
+                // Etiket merkezini vertex'in biraz dışına it: yatay offset
+                // cos*8, dikey offset sin*10 piksel.
+                final double tx = vx + l.cosA * 4;
+                final double ty = vy + l.sinA * 6;
+                // Pozitif left/top hesabı için merkezden offset
+                final double left = (tx - labelW / 2).clamp(0.0, w - labelW);
+                final double top = (ty - labelH / 2).clamp(0.0, totalH - labelH);
+                // Yatay hizalama: sağdaki vertex'ler sol-hizalı, sol vertex'ler sağ-hizalı,
+                // üst/alt orta vertex'ler centered.
+                TextAlign align = TextAlign.center;
+                if (l.cosA > 0.3) {
+                  align = TextAlign.left;
+                } else if (l.cosA < -0.3) {
+                  align = TextAlign.right;
+                }
+                return Positioned(
+                  left: left,
+                  top: top,
+                  width: labelW,
+                  height: labelH,
+                  child: Align(
+                    alignment: align == TextAlign.left
+                        ? Alignment.centerLeft
+                        : align == TextAlign.right
+                            ? Alignment.centerRight
+                            : Alignment.center,
+                    child: _label(context, l.name, align: align),
+                  ),
+                );
+              }).toList(),
             );
           }),
         ],
@@ -1713,9 +1718,10 @@ class _ExamFormSheetState extends ConsumerState<_ExamFormSheet> {
       case 'KPSS_LISANS':      return '2024 KPSS Çıkmış Sorular';
       case 'KPSS_ONLISANS':    return 'Yargı KPSS Ön Lisans';
       case 'KPSS_ORTAOGRETIM': return 'Yediiklim KPSS Ortaöğretim';
-      case 'ALES':             return 'Pegem ALES Genel';
-      case 'YDS':              return 'ÖSYM YDS Çıkmış Sorular';
-      case 'OABT':             return 'Pegem ÖABT Branş';
+      case 'ALES':             return 'Pegem ALES Genel — 50+50 soru';
+      case 'YDS':              return 'ÖSYM YDS Çıkmış Sorular — 80 soru';
+      case 'OABT':             return 'Pegem ÖABT — 40+10 soru';
+      case 'AGS':              return 'MEB AGS Denemesi — 80 soru';
       case 'OKUL_SINAVI':      return '2024 Okul Sınavı';
       default:                 return 'Deneme adı';
     }
@@ -1898,7 +1904,11 @@ class _ExamFormSheetState extends ConsumerState<_ExamFormSheet> {
       initialChildSize: 0.9,
       minChildSize: 0.6,
       maxChildSize: 0.95,
-      builder: (ctx, ctrl) => Container(
+      builder: (ctx, ctrl) => Padding(
+        // Klavye açıkken liste yukarı kayabilsin — DraggableScrollableSheet
+        // viewInsets'i otomatik almıyor.
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -2102,11 +2112,12 @@ class _ExamFormSheetState extends ConsumerState<_ExamFormSheet> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  SizedBox(height: 24 + MediaQuery.of(context).padding.bottom),
                 ],
               ),
             ),
           ],
+        ),
         ),
       ),
     );

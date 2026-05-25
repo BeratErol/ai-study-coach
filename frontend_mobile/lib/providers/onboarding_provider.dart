@@ -10,7 +10,20 @@ class OnboardingNotifier extends StateNotifier<OnboardingData> {
   void updateName(String v) => state = state.copyWith(name: v);
   void updateGender(String v) => state = state.copyWith(gender: v);
   void updateEducationLevel(String v) => state = state.copyWith(educationLevel: v);
-  void updateTargetExam(String v) => state = state.copyWith(targetExam: v);
+  // Sınav değişirse önceki sınavın ders listesi geçersiz — sıfırla.
+  void updateTargetExam(String v) {
+    if (state.targetExam == v) {
+      state = state.copyWith(targetExam: v);
+    } else {
+      state = state.copyWith(
+        targetExam: v,
+        selectedArea: '',
+        weakSubjects: const [],
+        strongSubjects: const [],
+        customSubjects: const [],
+      );
+    }
+  }
   void updateExamDate(DateTime? v) =>
       state = v == null ? state.copyWith(clearExamDate: true) : state.copyWith(examDate: v);
   void updateStudyType(String v) => state = state.copyWith(studyType: v);
@@ -27,7 +40,18 @@ class OnboardingNotifier extends StateNotifier<OnboardingData> {
   void updateStrongSubjects(List<String> v) => state = state.copyWith(strongSubjects: v);
   void updateWeakSubjects(List<String> v) => state = state.copyWith(weakSubjects: v);
   void updateCustomSubjects(List<String> v) => state = state.copyWith(customSubjects: v);
-  void updateSelectedArea(String v) => state = state.copyWith(selectedArea: v);
+  void updateSelectedArea(String v) {
+    if (state.selectedArea == v) {
+      state = state.copyWith(selectedArea: v);
+    } else {
+      state = state.copyWith(
+        selectedArea: v,
+        weakSubjects: const [],
+        strongSubjects: const [],
+        customSubjects: const [],
+      );
+    }
+  }
 
   Future<void> completeOnboarding() async {
     final userId = await TokenService.getUserId();

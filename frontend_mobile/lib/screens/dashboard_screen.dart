@@ -5,6 +5,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../core/app_theme.dart';
+import '../models/onboarding_data.dart';
 import '../models/study_plan.dart';
 import '../models/study_task.dart';
 import '../providers/gelisimim_provider.dart';
@@ -267,6 +268,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         },
         onRestMode: () {
           Navigator.pop(ctx);
+          // Zaten dinlenme modundaysa tekrar onay sorma — sadece uyarı.
+          if (ref.read(restDaysProvider.notifier).isTodayRest) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Zaten dinlenme modundasın 😴'),
+              backgroundColor: Color(0xFF10B981),
+            ));
+            return;
+          }
           _showRestModeDialog(context, ref);
         },
       ),
@@ -309,11 +318,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: _RestModeDialog(
           onConfirm: () {
-            final tasks = ref.read(todayTasksProvider).value ?? [];
-            ref
-                .read(completedTaskIdsProvider.notifier)
-                .markAll(tasks.map((t) => t.id).toSet());
-            // Bugünü dinlenme günü olarak kaydet (kalıcı + senkron)
+            // Tamamlanmamış görevleri otomatik tamamlama; daha önce
+            // tamamlananlar tamamlanmış kalır.
             ref.read(restDaysProvider.notifier).markToday();
             Navigator.pop(ctx);
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -495,20 +501,570 @@ class _CountdownBall extends StatelessWidget {
 // CONTENT AREA
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ContentArea extends StatelessWidget {
+class _ContentArea extends ConsumerWidget {
   final List<StudyTask> tasks;
   final VoidCallback onWeeklyPlan;
 
   const _ContentArea({required this.tasks, required this.onWeeklyPlan});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final restDays = ref.watch(restDaysProvider);
+    final today = DateTime.now();
+    final todayStr =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    final isRestToday = restDays.contains(todayStr);
+
+    // Haftalık plan süresi doldu mu? Doluysa task listesi yerine yenileme akışı.
+    final planAsync = ref.watch(studyPlanProvider);
+    final planExpired = planAsync.maybeWhen(
+      data: (plan) => isPlanExpired(plan),
+      orElse: () => false,
+    );
+
     return Column(
       children: [
         _WeeklyPlanButton(onTap: onWeeklyPlan),
         const SizedBox(height: 16),
-        if (tasks.isEmpty) _EmptyState() else _TaskList(tasks: tasks),
+        if (planExpired)
+          _PlanExpiredState(
+            onRenewSame: () => _showRenewSameDialog(context, ref),
+            onRenewChange: () => _showRenewChangeSheet(context, ref),
+          )
+        else if (isRestToday)
+          _RestDayState(onDisable: () {
+            ref.read(restDaysProvider.notifier).unmarkToday();
+          })
+        else if (tasks.isEmpty)
+          _EmptyState()
+        else
+          _TaskList(tasks: tasks),
       ],
+    );
+  }
+
+  void _showRenewSameDialog(BuildContext context, WidgetRef ref) {
+    final data = ref.read(onboardingDataProvider).value;
+    if (data == null) return;
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => _RenewSameDialog(
+        data: data,
+        onConfirm: () async {
+          Navigator.of(dialogCtx).pop();
+          await regenerateStudyPlan(ref);
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Yeni haftalık programın hazır! 🎉'),
+              backgroundColor: Color(0xFF10B981),
+            ));
+          }
+        },
+      ),
+    );
+  }
+
+  void _showRenewChangeSheet(BuildContext context, WidgetRef ref) {
+    final data = ref.read(onboardingDataProvider).value;
+    if (data == null) return;
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetCtx) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, sc) => _RenewChangeSheet(
+          data: data,
+          scrollController: sc,
+          onConfirm: (updated) async {
+            Navigator.of(sheetCtx).pop();
+            await regenerateStudyPlan(ref, overrideOnboarding: updated);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('Yeni haftalık programın hazır! 🎉'),
+                backgroundColor: Color(0xFF10B981),
+              ));
+            }
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanExpiredState extends StatelessWidget {
+  final VoidCallback onRenewSame;
+  final VoidCallback onRenewChange;
+  const _PlanExpiredState({required this.onRenewSame, required this.onRenewChange});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 18),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3), width: 2),
+      ),
+      child: Column(
+        children: [
+          const Text('🎉', style: TextStyle(fontSize: 56)),
+          const SizedBox(height: 10),
+          Text(
+            'Tebrikler haftalık çalışmanı tamamladın!',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Theme.of(context).textTheme.bodyLarge?.color,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Yeni haftaya hazır mısın?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: onRenewSame,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('🔁 Aynı Derslerle Yeni Program',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: onRenewChange,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: BorderSide(color: AppColors.primary, width: 2),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('✏️ Dersleri Değiştir',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RenewSameDialog extends StatelessWidget {
+  final OnboardingData data;
+  final VoidCallback onConfirm;
+  const _RenewSameDialog({required this.data, required this.onConfirm});
+
+  @override
+  Widget build(BuildContext context) {
+    final weak = data.weakSubjects;
+    final strong = data.strongSubjects;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('🔁 Aynı Derslerle Yeni Program',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 12),
+              const Text(
+                'Mevcut ders profilinle yeni 7 günlük program oluşturulacak.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              const Text('⚡ Zorlandığın Dersler',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFEA580C))),
+              const SizedBox(height: 6),
+              if (weak.isEmpty)
+                const Text('Seçili değil', style: TextStyle(fontSize: 12, color: Colors.grey))
+              else
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: weak
+                      .map((s) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFFFEDD5),
+                                borderRadius: BorderRadius.circular(8)),
+                            child: Text(s,
+                                style: const TextStyle(
+                                    color: Color(0xFF9A3412),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600)),
+                          ))
+                      .toList(),
+                ),
+              const SizedBox(height: 12),
+              const Text('💪 Güçlü Olduğun Dersler',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF16A34A))),
+              const SizedBox(height: 6),
+              if (strong.isEmpty)
+                const Text('Seçili değil', style: TextStyle(fontSize: 12, color: Colors.grey))
+              else
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: strong
+                      .map((s) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(8)),
+                            child: Text(s,
+                                style: const TextStyle(
+                                    color: Color(0xFF15803D),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600)),
+                          ))
+                      .toList(),
+                ),
+              const SizedBox(height: 16),
+              const Text(
+                'Bu derslere göre program oluşturulacaktır, emin misin?',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Vazgeç', style: TextStyle(color: Colors.grey)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: weak.isEmpty ? null : onConfirm,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('Evet, oluştur', style: TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RenewChangeSheet extends StatefulWidget {
+  final OnboardingData data;
+  final ScrollController scrollController;
+  final void Function(OnboardingData updated) onConfirm;
+  const _RenewChangeSheet({
+    required this.data,
+    required this.scrollController,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_RenewChangeSheet> createState() => _RenewChangeSheetState();
+}
+
+class _RenewChangeSheetState extends State<_RenewChangeSheet> {
+  late List<String> _strong;
+  late List<String> _weak;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _strong = List<String>.from(widget.data.strongSubjects);
+    _weak = List<String>.from(widget.data.weakSubjects);
+  }
+
+  void _toggle(String name, {required bool isStrong}) {
+    setState(() {
+      _error = null;
+      if (isStrong) {
+        if (_strong.contains(name)) {
+          _strong.remove(name);
+        } else {
+          _strong.add(name);
+          _weak.remove(name);
+        }
+      } else {
+        if (_weak.contains(name)) {
+          _weak.remove(name);
+        } else {
+          _weak.add(name);
+          _strong.remove(name);
+        }
+      }
+    });
+  }
+
+  void _submit() {
+    final isFullyManual = widget.data.targetExam == 'OkulSinavi' &&
+        widget.data.selectedArea == 'uni_diger';
+    final hasMin = isFullyManual
+        ? widget.data.customSubjects.isNotEmpty
+        : _weak.isNotEmpty;
+    if (!hasMin) {
+      setState(() {
+        _error = 'Program oluşturmak için en az 1 zayıf ders seçmelisin.';
+      });
+      return;
+    }
+    widget.onConfirm(widget.data.copyWith(
+      strongSubjects: _strong,
+      weakSubjects: _weak,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isFullyManual = widget.data.targetExam == 'OkulSinavi' &&
+        widget.data.selectedArea == 'uni_diger';
+    final base = isFullyManual
+        ? <SubjectData>[]
+        : getSubjectsForExam(widget.data.targetExam, widget.data.selectedArea);
+    final baseNames = base.map((s) => s.name).toSet();
+    final extras = widget.data.customSubjects
+        .where((n) => !baseNames.contains(n))
+        .map((n) => SubjectData(name: n, emoji: '📝'))
+        .toList();
+    final allSubjects = [...base, ...extras];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+                color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('✏️ Dersleri Değiştir',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Eklemek veya çıkarmak istediğin dersleri seç.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey)),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              controller: widget.scrollController,
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              children: [
+                const Text('💪 Güçlü Olduğun Dersler',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF16A34A))),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: allSubjects.map((s) {
+                    final isSel = _strong.contains(s.name);
+                    final disabled = _weak.contains(s.name);
+                    return GestureDetector(
+                      onTap: disabled ? null : () => _toggle(s.name, isStrong: true),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSel ? const Color(0xFF16A34A) : Colors.transparent,
+                          border: Border.all(
+                            color: isSel ? const Color(0xFF16A34A) : Colors.grey.shade300,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Opacity(
+                          opacity: disabled ? 0.4 : 1,
+                          child: Text('${s.emoji} ${s.name}',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSel ? Colors.white : null)),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 18),
+                const Text('⚡ Zorlandığın Dersler',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFEA580C))),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: allSubjects.map((s) {
+                    final isSel = _weak.contains(s.name);
+                    final disabled = _strong.contains(s.name);
+                    return GestureDetector(
+                      onTap: disabled ? null : () => _toggle(s.name, isStrong: false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSel ? const Color(0xFFEA580C) : Colors.transparent,
+                          border: Border.all(
+                            color: isSel ? const Color(0xFFEA580C) : Colors.grey.shade300,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Opacity(
+                          opacity: disabled ? 0.4 : 1,
+                          child: Text('${s.emoji} ${s.name}',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSel ? Colors.white : null)),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      border: Border.all(color: const Color(0xFFFCA5A5)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('⚠️ $_error',
+                        style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Vazgeç', style: TextStyle(color: Colors.grey)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Oluştur',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RestDayState extends StatelessWidget {
+  final VoidCallback onDisable;
+  const _RestDayState({required this.onDisable});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Column(
+        children: [
+          const Text('😴', style: TextStyle(fontSize: 48)),
+          const SizedBox(height: 12),
+          Text(
+            'Bugün dinlenme günü',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Theme.of(context).textTheme.bodyLarge?.color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'İyileş ve yarın güçlü dön!',
+            style: TextStyle(
+              fontSize: 13,
+              color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.6),
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: onDisable,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEEF2FF),
+              foregroundColor: AppColors.primary,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Dinlenme modunu kapat',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+          ),
+        ],
+      ),
     );
   }
 }

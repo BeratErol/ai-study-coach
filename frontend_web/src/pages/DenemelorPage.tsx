@@ -6,9 +6,10 @@ import {
 import { useUserProfile } from '../hooks/useUserProfile'
 import { denemeService, type ExamRecord, type CreateExamBody } from '../services/denemeService'
 import {
-  examTypes, availableExamTypes, bransBranchLessons, examTypeDisplayName,
+  availableExamTypes, bransBranchLessons, examTypeDisplayName, buildOkulSinaviType,
   type ExamTypeInfo, type LessonSlot,
 } from '../data/examTypeData'
+import { getSubjectsForExam } from '../data/subjectsData'
 import { getOnboardingData } from '../services/userPrefsService'
 import { getUserId } from '../services/tokenService'
 
@@ -29,9 +30,10 @@ function examNamePlaceholder(apiType: string): string {
     case 'KPSS_LISANS':    return '2024 KPSS Çıkmış Sorular'
     case 'KPSS_ONLISANS':  return 'Yargı KPSS Ön Lisans'
     case 'KPSS_ORTAOGRETIM': return 'Yediiklim KPSS Ortaöğretim'
-    case 'ALES':           return 'Pegem ALES Genel'
-    case 'YDS':            return 'ÖSYM YDS Çıkmış Sorular'
-    case 'OABT':           return 'Pegem ÖABT Branş'
+    case 'ALES':           return 'Pegem ALES Genel — 50+50 soru'
+    case 'YDS':            return 'ÖSYM YDS Çıkmış Sorular — 80 soru'
+    case 'OABT':           return 'Pegem ÖABT — 40+10 soru'
+    case 'AGS':            return 'MEB AGS Denemesi — 80 soru'
     case 'OKUL_SINAVI':    return '2024 Okul Sınavı'
     default:               return 'Deneme adı'
   }
@@ -114,6 +116,20 @@ function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSav
   const [bransLesson, setBransLesson] = useState<string>(
     existing?.type === 'BRANS' ? existing.details[0]?.lessonName ?? '' : '',
   )
+  const [okulLesson, setOkulLesson] = useState<string>(
+    existing?.type === 'OKUL_SINAVI' ? existing.details[0]?.lessonName ?? '' : '',
+  )
+  // OkulSinavi için kullanıcının girdiği soru sayısı (ders başına)
+  const [okulMaxQ, setOkulMaxQ] = useState<Record<string, number>>(() => {
+    const init: Record<string, number> = {}
+    if (existing?.type === 'OKUL_SINAVI') {
+      existing.details.forEach((d) => {
+        const total = (d.correct ?? 0) + (d.incorrect ?? 0)
+        if (total > 0) init[d.lessonName] = total
+      })
+    }
+    return init
+  })
   // lessonName → { correct, wrong }
   const [values, setValues] = useState<Record<string, { correct: number; wrong: number }>>(() => {
     const init: Record<string, { correct: number; wrong: number }> = {}
@@ -126,9 +142,19 @@ function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSav
   const [error, setError] = useState<string | null>(null)
 
   const isBrans = selectedType.apiType === 'BRANS'
-  const activeLessons: LessonSlot[] = isBrans
-    ? branchLessons.filter((l) => l.name === bransLesson)
-    : selectedType.lessons
+  const isOkulSinavi = selectedType.apiType === 'OKUL_SINAVI'
+  let activeLessons: LessonSlot[]
+  if (isBrans) {
+    activeLessons = branchLessons.filter((l) => l.name === bransLesson)
+  } else if (isOkulSinavi) {
+    // OkulSinavi: tek ders + kullanıcının girdiği soru sayısı
+    const ls = selectedType.lessons.find((l) => l.name === okulLesson)
+    activeLessons = ls
+      ? [{ name: ls.name, maxQuestions: okulMaxQ[ls.name] ?? 0 }]
+      : []
+  } else {
+    activeLessons = selectedType.lessons
+  }
 
   const totalNet = activeLessons.reduce((sum, l) => {
     const v = values[l.name] ?? { correct: 0, wrong: 0 }
@@ -145,6 +171,14 @@ function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSav
   async function save() {
     if (isBrans && !bransLesson) {
       setError('Lütfen bir ders seç.')
+      return
+    }
+    if (isOkulSinavi && !okulLesson) {
+      setError('Lütfen bir ders seç.')
+      return
+    }
+    if (isOkulSinavi && (okulMaxQ[okulLesson] ?? 0) <= 0) {
+      setError('Soru sayısını gir.')
       return
     }
     const details = activeLessons.map((l) => {
@@ -205,6 +239,8 @@ function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSav
               const t = availableTypes.find((x) => x.apiType === e.target.value)!
               setSelectedType(t)
               setBransLesson('')
+              setOkulLesson('')
+              setOkulMaxQ({})
               setValues({})
             }}
             className="w-full h-14 px-4 rounded-xl text-base outline-none"
@@ -227,6 +263,42 @@ function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSav
               {branchLessons.map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
             </select>
           </div>
+        )}
+
+        {isOkulSinavi && (
+          <>
+            <div>
+              <label className="block text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Sınav Dersi Seç</label>
+              <select
+                value={okulLesson}
+                onChange={(e) => {
+                  setOkulLesson(e.target.value)
+                  setValues({})
+                }}
+                className="w-full h-14 px-4 rounded-xl text-base outline-none"
+                style={{ background: 'var(--bg)', border: '2px solid var(--border)', color: 'var(--text-primary)' }}
+              >
+                <option value="">Ders seç</option>
+                {selectedType.lessons.map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
+              </select>
+            </div>
+            {okulLesson && (
+              <div>
+                <label className="block text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Soru Sayısı</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={okulMaxQ[okulLesson] || ''}
+                  onChange={(e) =>
+                    setOkulMaxQ((prev) => ({ ...prev, [okulLesson]: Math.max(0, parseInt(e.target.value) || 0) }))
+                  }
+                  placeholder="örn. 20"
+                  className="w-full h-14 px-4 rounded-xl text-base outline-none"
+                  style={{ background: 'var(--bg)', border: '2px solid var(--border)', color: 'var(--text-primary)' }}
+                />
+              </div>
+            )}
+          </>
         )}
 
         <div>
@@ -257,8 +329,8 @@ function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSav
         {/* Ders bazlı doğru/yanlış */}
         <div>
           <p className="text-base font-bold mb-3" style={{ color: 'var(--text-primary)' }}>Ders Bazlı Doğru / Yanlış</p>
-          {isBrans && !bransLesson ? (
-            <p className="text-base" style={{ color: 'var(--text-hint)' }}>Ders seçtikten sonra doğru/yanlış girebilirsin.</p>
+          {(isBrans && !bransLesson) || (isOkulSinavi && (!okulLesson || (okulMaxQ[okulLesson] ?? 0) <= 0)) ? (
+            <p className="text-base" style={{ color: 'var(--text-hint)' }}>Ders ve soru sayısını seçtikten sonra doğru/yanlış girebilirsin.</p>
           ) : (
             <div className="space-y-3">
               <div className="flex gap-3 px-1">
@@ -805,6 +877,16 @@ export default function DenemelorPage() {
   const types = useMemo(() => {
     const targetExam = profile?.targetExam || localData?.targetExam || ''
     const selectedArea = profile?.selectedArea || localData?.selectedArea || ''
+    // OkulSinavi: kullanıcının seçtiği derslerden dinamik tür (mobil ile birebir).
+    if (targetExam === 'OkulSinavi') {
+      const base = selectedArea === 'uni_diger'
+        ? []
+        : getSubjectsForExam(targetExam, selectedArea)
+      const baseNames = new Set(base.map((s) => s.name))
+      const extras = (localData?.customSubjects ?? []).filter((n) => !baseNames.has(n))
+      const allSubjects = [...base.map((s) => s.name), ...extras]
+      return [buildOkulSinaviType(allSubjects)]
+    }
     return availableExamTypes(targetExam, selectedArea)
   }, [profile, localData])
 
@@ -816,17 +898,25 @@ export default function DenemelorPage() {
   }
   useEffect(() => { load() }, [])
 
-  // Mevcut deneme türleri (gerçekte kayıtlı olanlar)
+  // Sınavın izin verdiği türlere göre filtrele — başka sınava ait eski
+  // denemeler bu sınav seçiliyken gösterilmez.
+  const allowedApiTypes = useMemo(() => new Set(types.map((t) => t.apiType)), [types])
+  const allowedExams = useMemo(
+    () => allExams.filter((e) => allowedApiTypes.has(e.type)),
+    [allExams, allowedApiTypes],
+  )
+
+  // Mevcut deneme türleri (gerçekte kayıtlı + sınava ait olanlar)
   const presentTypes = useMemo(() => {
-    const set = new Set(allExams.map((e) => e.type).filter(Boolean))
+    const set = new Set(allowedExams.map((e) => e.type).filter(Boolean))
     return [...set].sort()
-  }, [allExams])
+  }, [allowedExams])
 
   const effectiveFilter = filterType ?? presentTypes[0] ?? null
-  const filtered = effectiveFilter ? allExams.filter((e) => e.type === effectiveFilter) : allExams
+  const filtered = effectiveFilter ? allowedExams.filter((e) => e.type === effectiveFilter) : []
   const isBrans = effectiveFilter === 'BRANS'
   const selectedTypeInfo = !isBrans && effectiveFilter
-    ? examTypes.find((t) => t.apiType === effectiveFilter) ?? null
+    ? types.find((t) => t.apiType === effectiveFilter) ?? null
     : null
 
   async function handleDelete(id: number) {
@@ -863,7 +953,7 @@ export default function DenemelorPage() {
         <div className="px-8 sm:px-10 pt-8 space-y-8 sm:space-y-12">
           {loading ? (
             <div className="h-40 rounded-2xl animate-pulse" style={{ background: 'var(--bg)' }} />
-          ) : allExams.length === 0 ? (
+          ) : allowedExams.length === 0 ? (
             <div className="text-center py-20 rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
               <p className="text-6xl mb-4">📝</p>
               <p className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Henüz deneme eklenmedi</p>

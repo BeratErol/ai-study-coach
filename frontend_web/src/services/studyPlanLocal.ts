@@ -33,12 +33,26 @@ export function resetStudyPlan(userId: string): void {
 }
 
 /**
+ * "Etkin gün" — gece kuşu kullanıcılar için sabah 04:00'a kadar dünden say.
+ * Plan süresi de bu mantıkla değerlendirilir.
+ */
+function effectiveToday(): Date {
+  const now = new Date()
+  if (now.getHours() < 4) {
+    const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+    return y
+  }
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
+/**
  * Geçerli haftalık planı döndürür — TÜM 7 günü (geçmiş + bugün + gelecek).
- * - Kayıtlı plan hâlâ geçerliyse (7 günlük pencere dolmadıysa) tam liste döner.
- * - Plan yok / süresi dolmuş / bozuksa yeni üret ve kaydet.
+ * - Kayıtlı plan varsa olduğu gibi döndürür (süresi dolsa bile).
+ * - Plan hiç yoksa ilk kez `OnboardingData`'dan üretir.
  *
- * Bugüne özel kullanım `getTodayPlan` ile yapılır; haftalık görünüm geçmiş
- * günleri de "geçti" olarak gösterebilsin diye filtre kaldırıldı.
+ * Süresi dolan planı OTOMATİK yenilemez — bunu kullanıcı dashboard'daki
+ * "Yeni Program Oluştur" akışıyla manuel yapar. Bu sayede iki cihaz da
+ * yeni plan tek bir yerden üretildiğinde senkron kalır.
  */
 export function getStudyPlan(): StudyDay[] {
   const userId = getUserId()
@@ -46,30 +60,31 @@ export function getStudyPlan(): StudyDay[] {
   const data = getOnboardingData(userId)
   if (!data) return []
 
-  const today = new Date()
-  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-
   const raw = localStorage.getItem(planKey(userId))
   if (raw) {
     try {
       const stored = JSON.parse(raw) as StudyDay[]
       if (stored.length > 0 && stored[0].blocks !== undefined) {
-        const first = new Date(stored[0].date)
-        const startDate = new Date(first.getFullYear(), first.getMonth(), first.getDate())
-        const endDate = new Date(startDate)
-        endDate.setDate(endDate.getDate() + 6)
-
-        if (todayDate.getTime() <= endDate.getTime()) {
-          return stored
-        }
-        // plan süresi dolmuş → yeniden üret
+        return stored
       }
     } catch {
-      // bozuk JSON → yeniden üret
+      // bozuk JSON → yeni üret
     }
   }
-
+  // Hiç plan yok — ilk kez üret
   return generateAndStorePlan(userId, data)
+}
+
+/**
+ * Plan süresi doldu mu? "Etkin gün" (gece kuşu kuralı: 04:00'tan önceyse dün)
+ * planın son gününden BÜYÜKSE plan bitti demektir.
+ */
+export function isPlanExpired(plan?: StudyDay[]): boolean {
+  const p = plan ?? getStudyPlan()
+  if (p.length === 0) return false
+  const last = new Date(p[p.length - 1].date)
+  const lastDay = new Date(last.getFullYear(), last.getMonth(), last.getDate())
+  return effectiveToday().getTime() > lastDay.getTime()
 }
 
 /** Bugünün planını döndürür (yoksa null). */

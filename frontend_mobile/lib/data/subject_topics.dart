@@ -607,7 +607,7 @@ const Map<String, List<String>> subjectTopics = {
   ],
   'İngilizce': [
     'Kelime Bilgisi',
-    'Dilbilgisi',
+    'Dil Bilgisi',
     'Okuma',
     'Dinleme',
   ],

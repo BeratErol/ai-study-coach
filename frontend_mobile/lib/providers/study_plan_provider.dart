@@ -36,6 +36,54 @@ Future<void> resetStudyPlan(WidgetRef ref, String userId) async {
   ref.invalidate(studyPlanProvider);
 }
 
+/// "Etkin gün" — gece kuşu için sabah 04:00'a kadar dünden say (web ile aynı).
+DateTime _effectiveTodayForPlan() {
+  final now = DateTime.now();
+  if (now.hour < 4) {
+    final y = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
+    return y;
+  }
+  return DateTime(now.year, now.month, now.day);
+}
+
+/// Plan süresi doldu mu? Son gün etkin günden küçükse evet.
+bool isPlanExpired(List<StudyDay> plan) {
+  if (plan.isEmpty) return false;
+  final last = plan.last.date;
+  final lastDay = DateTime(last.year, last.month, last.day);
+  return _effectiveTodayForPlan().isAfter(lastDay);
+}
+
+/// Yeni 7 günlük plan üretir + onboarding patch'iyle birlikte saklar.
+/// Web'in `generateAndStorePlan` muadili.
+Future<void> regenerateStudyPlan(
+  WidgetRef ref, {
+  OnboardingData? overrideOnboarding,
+}) async {
+  final userId = await TokenService.getUserId();
+  if (userId == null) return;
+  OnboardingData data;
+  if (overrideOnboarding != null) {
+    data = overrideOnboarding;
+    await UserPrefsService.saveOnboardingData(userId, data.toJson());
+  } else {
+    final raw = await UserPrefsService.getOnboardingData(userId);
+    if (raw == null) return;
+    data = OnboardingData.fromJson(raw);
+  }
+  final plan = StudyPlanGenerator.generateWeeklyPlan(data);
+  final jsonList = plan.map((d) => d.toJson()).toList();
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_weeklyPlanKey(userId), jsonEncode(jsonList));
+  await AppStateService.pushAppState('weekly_plan', jsonList);
+  // Yeni plan id'leri farklı — bugünün tamamlama/atama kayıtları artık geçersiz.
+  await ref.read(completedTaskIdsProvider.notifier).clearToday();
+  ref.read(topicAssignmentsProvider.notifier).clearAll();
+  ref.invalidate(studyPlanProvider);
+  ref.invalidate(todayTasksProvider);
+  ref.invalidate(onboardingDataProvider);
+}
+
 final studyPlanProvider = FutureProvider<List<StudyDay>>((ref) async {
   final userId = await TokenService.getUserId();
   if (userId == null) return [];

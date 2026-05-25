@@ -68,6 +68,7 @@ namespace Backend.DTOs
         public string LevelName { get; set; } = null!;
         public string LevelEmoji { get; set; } = null!;
         public int StreakDays { get; set; }
+        public int StreakBeforeToday { get; set; }
         public int TotalQuestions { get; set; }
     }
 

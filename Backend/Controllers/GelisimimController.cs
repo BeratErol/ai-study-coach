@@ -236,6 +236,16 @@ namespace Backend.Controllers
                 checkDate = checkDate.AddDays(-1);
             }
 
+            // Streak ending yesterday — client tarafı bugünü lokal "tamamlanan ders"
+            // ile aktif sayabilsin diye ayrıca bildiriliyor.
+            var streakBeforeToday = 0;
+            var beforeDate = today.AddDays(-1);
+            while (activeDays.Contains(beforeDate.ToString("yyyy-MM-dd")))
+            {
+                streakBeforeToday++;
+                beforeDate = beforeDate.AddDays(-1);
+            }
+
             // Level
             string levelName;
             string levelEmoji;
@@ -258,6 +268,7 @@ namespace Backend.Controllers
                 LevelName = levelName,
                 LevelEmoji = levelEmoji,
                 StreakDays = streakDays,
+                StreakBeforeToday = streakBeforeToday,
                 TotalQuestions = totalQuestions,
             });
         }
@@ -305,7 +316,7 @@ namespace Backend.Controllers
                 "YDT" => new List<(string, string, string)>
                 {
                     ("ydt_kelime",     "Kelime Bilgisi",                      "📖"),
-                    ("ydt_dilbilgisi", "Dilbilgisi",                          "📝"),
+                    ("ydt_dilbilgisi", "Dil Bilgisi",                         "📝"),
                     ("ydt_cloze",      "Cloze Test",                          "🔤"),
                     ("ydt_cumle",      "Cümle Tamamlama",                     "✏️"),
                     ("ydt_ceviri",     "Çeviri",                              "🌐"),

@@ -23,7 +23,6 @@ function TimeRow({ label, value, onChange }: { label: string; value: string; onC
           onChange={(e) => onChange(e.target.value)}
           className="text-indigo-600 font-bold text-3xl border-none bg-transparent outline-none cursor-pointer"
         />
-        <span className="text-3xl">🕐</span>
       </div>
     </div>
   )
@@ -92,7 +91,7 @@ export default function Step6DailyRoutine() {
         </div>
         {hasWeekendCourse && (
           <div className="mb-2">
-            <TimeRow label="Kurs başlangıç" value={weekendStartTime} onChange={updateWeekendStartTime} />
+            <TimeRow label="Derse Başlama Saati" value={weekendStartTime} onChange={updateWeekendStartTime} />
           </div>
         )}
         <div className="bg-white rounded-2xl border-2 border-gray-200 p-5">

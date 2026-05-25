@@ -36,8 +36,19 @@ export const useOnboardingStore = create<OnboardingStore>((set, get) => ({
   updateName: (v) => set({ name: v }),
   updateGender: (v) => set({ gender: v }),
   updateEducationLevel: (v) => set({ educationLevel: v }),
-  updateTargetExam: (v) => set({ targetExam: v }),
-  updateSelectedArea: (v) => set({ selectedArea: v }),
+  // Sınav/alan değiştiğinde önceki sınavın ders havuzundan seçilmiş
+  // zayıf/güçlü/manuel listeler artık geçersiz — sıfırla. Aksi halde
+  // yeni sınava ait olmayan dersler programa sızıyor.
+  updateTargetExam: (v) => set((s) =>
+    s.targetExam === v
+      ? { targetExam: v }
+      : { targetExam: v, weakSubjects: [], strongSubjects: [], customSubjects: [], selectedArea: '' }
+  ),
+  updateSelectedArea: (v) => set((s) =>
+    s.selectedArea === v
+      ? { selectedArea: v }
+      : { selectedArea: v, weakSubjects: [], strongSubjects: [], customSubjects: [] }
+  ),
   updateExamDate: (v) => set({ examDate: v }),
   updateStudyType: (v) => set({ studyType: v }),
   updateHasWeekdaySchool: (v) => set({ hasWeekdaySchool: v }),

@@ -115,6 +115,7 @@ class XpInfo {
   final String levelName;
   final String levelEmoji;
   final int streakDays;
+  final int streakBeforeToday;
   final int totalQuestions;
 
   const XpInfo({
@@ -124,6 +125,7 @@ class XpInfo {
     required this.levelName,
     required this.levelEmoji,
     required this.streakDays,
+    required this.streakBeforeToday,
     required this.totalQuestions,
   });
 
@@ -134,6 +136,7 @@ class XpInfo {
         levelName: json['levelName'] ?? 'Çırak Öğrenci',
         levelEmoji: json['levelEmoji'] ?? '🌱',
         streakDays: json['streakDays'] ?? 0,
+        streakBeforeToday: json['streakBeforeToday'] ?? 0,
         totalQuestions: json['totalQuestions'] ?? 0,
       );
 
@@ -144,6 +147,7 @@ class XpInfo {
     levelName: 'Çırak Öğrenci',
     levelEmoji: '🌱',
     streakDays: 0,
+    streakBeforeToday: 0,
     totalQuestions: 0,
   );
 

@@ -70,6 +70,7 @@ XpInfo applyXpBoost(XpInfo base, int boost) {
     levelName: levelName,
     levelEmoji: levelEmoji,
     streakDays: base.streakDays,
+    streakBeforeToday: base.streakBeforeToday,
     totalQuestions: base.totalQuestions,
   );
 }

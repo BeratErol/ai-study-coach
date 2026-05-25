@@ -31,7 +31,9 @@ export default function LoginPage() {
       if (res.status === 200 && res.data) profile = res.data
     } catch (err: any) {
       if (err.response?.status === 404) {
-        // Profil yok → onboarding gerekli
+        // Profil yok → yeni kullanıcı. Sohbet store'u önceki kullanıcıdan
+        // kalmasın diye sıfırla, sonra onboarding'e yönlendir.
+        useChatbotStore.getState().reloadFromCache()
         navigate('/onboarding')
         return
       }
@@ -41,6 +43,7 @@ export default function LoginPage() {
     }
 
     if (!profile) {
+      useChatbotStore.getState().reloadFromCache()
       navigate('/onboarding')
       return
     }

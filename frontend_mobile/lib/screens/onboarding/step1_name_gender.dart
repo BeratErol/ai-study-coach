@@ -65,6 +65,7 @@ class _Step1NameGenderState extends ConsumerState<Step1NameGender> {
           ),
           const SizedBox(height: 8),
           Container(
+            clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               color: Theme.of(context).cardColor,
               borderRadius: AppRadius.md,
@@ -79,6 +80,9 @@ class _Step1NameGenderState extends ConsumerState<Step1NameGender> {
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
+                filled: true,
+                fillColor: Colors.transparent,
+                contentPadding: EdgeInsets.symmetric(vertical: 14),
               ),
             ),
           ),

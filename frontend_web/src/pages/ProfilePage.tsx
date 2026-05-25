@@ -8,7 +8,8 @@ import {
   getOnboardingData, saveOnboardingData,
   getExamGoal, saveExamGoal, type ExamGoal,
 } from '../services/userPrefsService'
-import { generateAndStorePlan, getTodayPlan } from '../services/studyPlanLocal'
+import { generateAndStorePlan, getTodayPlan, resetStudyPlan } from '../services/studyPlanLocal'
+import { pushAppState } from '../services/appStateService'
 import {
   getQuickNotes, saveQuickNotes, type QuickNote,
   saveTopicAssignments, saveCompletedTaskIds, saveCompletedLessons,
@@ -78,7 +79,21 @@ async function persistProfile(patch: Partial<OnboardingData>): Promise<Onboardin
   const shapeChanged = isSubjectShapeChanged(current, updated)
 
   saveOnboardingData(userId, updated)
-  generateAndStorePlan(userId, updated)
+  // Zayıf ders olmadan anlamlı bir plan oluşturulamaz (uni_diger için
+  // customSubjects yeterli sayılır). Bu durumda mevcut planı sıfırla ki
+  // dashboard'da eski/yanıltıcı görevler kalmasın; kullanıcı Ders Profilim'den
+  // zayıf ders seçince plan tekrar üretilir.
+  const isOkulDiger = updated.targetExam === 'OkulSinavi' &&
+    updated.selectedArea === 'uni_diger'
+  const hasMinimumSubjects = isOkulDiger
+    ? (updated.customSubjects?.length ?? 0) > 0
+    : updated.weakSubjects.length > 0
+  if (hasMinimumSubjects) {
+    generateAndStorePlan(userId, updated)
+  } else {
+    resetStudyPlan(userId)
+    pushAppState('weekly_plan', [])
+  }
 
   if (shapeChanged) {
     // Yeni planın id'leri farklı — eski atamalar ve tamamlananlar geçersiz.
@@ -411,6 +426,7 @@ function DersProfilimSection({ data, onRequestSave }: {
   const [customSubjects, setCustomSubjects] = useState<string[]>(data.customSubjects ?? [])
   const [newSubject, setNewSubject] = useState('')
   const [dirty, setDirty] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // Manuel ders ekleme yalnızca OkulSinavi için açık (mobil ile uyumlu).
   // Diğer sınavların dersleri sabit havuzdur, kullanıcı ekleyemez.
@@ -464,7 +480,18 @@ function DersProfilimSection({ data, onRequestSave }: {
   }
 
   function save() {
-    if (weak.length === 0 && strong.length === 0) return
+    // uni_diger: kullanıcı tüm dersleri manuel ekliyor → customSubjects yeterli.
+    const isOkulDiger = data.targetExam === 'OkulSinavi' && data.selectedArea === 'uni_diger'
+    const hasMinimum = isOkulDiger ? customSubjects.length > 0 : weak.length > 0
+    if (!hasMinimum) {
+      setSaveError(
+        isOkulDiger
+          ? 'Program oluşturmak için en az 1 ders eklemelisin.'
+          : 'Program oluşturmak için en az 1 zayıf ders seçmelisin.',
+      )
+      return
+    }
+    setSaveError(null)
     setDirty(false)
     onRequestSave(
       { strongSubjects: strong, weakSubjects: weak, customSubjects },
@@ -567,6 +594,14 @@ function DersProfilimSection({ data, onRequestSave }: {
 
       {chips('💪 Güçlü Olduğun Dersler', '#16A34A', strong, 'strong')}
       {chips('⚡ Zorlandığın Dersler', '#EA580C', weak, 'weak')}
+      {saveError && (
+        <div
+          className="px-4 py-3 rounded-xl text-sm font-medium"
+          style={{ background: '#FEF2F2', color: '#DC2626', border: '1.5px solid #FCA5A5' }}
+        >
+          ⚠️ {saveError}
+        </div>
+      )}
       {dirty && (
         <button
           onClick={save}
@@ -1095,7 +1130,13 @@ export default function ProfilePage() {
               </Section>
 
               <Section icon="📖" title="Ders Profilim" color="#2563EB">
-                <DersProfilimSection data={data} onRequestSave={requestSave} />
+                {/* key sınav/alan değişince re-mount tetikler — local strong/weak
+                    state önceki sınavın seçimlerinden temizlenir. */}
+                <DersProfilimSection
+                  key={`${data.targetExam}|${data.selectedArea}`}
+                  data={data}
+                  onRequestSave={requestSave}
+                />
               </Section>
 
               <Section icon="🕐" title="Zaman ve Biyoritim" color="#DB2777">

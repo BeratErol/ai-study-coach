@@ -59,9 +59,15 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
             // ── Green XP header ──────────────────────────────────────────
             SliverToBoxAdapter(
               child: xpAsync.when(
-                data: (xp) => _XpHeader(xp: applyXpBoost(xp, localXpBoost)),
+                data: (xp) => _XpHeader(
+                  xp: applyXpBoost(xp, localXpBoost),
+                  localCompletedToday: localStats.completedTasks,
+                ),
                 loading: () => _XpHeaderSkeleton(),
-                error: (e, st) => _XpHeader(xp: XpInfo.empty),
+                error: (e, st) => _XpHeader(
+                  xp: XpInfo.empty,
+                  localCompletedToday: localStats.completedTasks,
+                ),
               ),
             ),
             // ── Body ─────────────────────────────────────────────────────
@@ -170,7 +176,15 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
 
 class _XpHeader extends StatelessWidget {
   final XpInfo xp;
-  const _XpHeader({required this.xp});
+  final int localCompletedToday;
+  const _XpHeader({required this.xp, this.localCompletedToday = 0});
+
+  // Soru çözümü VEYA tamamlanan ders → bugün aktif.
+  int get _effectiveStreak {
+    final backendCountsToday = xp.streakDays > xp.streakBeforeToday;
+    final todayActive = backendCountsToday || localCompletedToday > 0;
+    return todayActive ? xp.streakBeforeToday + 1 : 0;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -194,10 +208,10 @@ class _XpHeader extends StatelessWidget {
                   text: '${xp.totalXP} XP',
                   bg: const Color(0xFFFBBF24),
                   textColor: Colors.black87),
-              if (xp.streakDays > 0) ...[
+              if (_effectiveStreak > 0) ...[
                 const SizedBox(height: 6),
                 _Badge(
-                    text: '🔥 ${xp.streakDays} Gün',
+                    text: '🔥 $_effectiveStreak Gün',
                     bg: Colors.white.withValues(alpha: 0.25)),
               ],
             ],
@@ -472,6 +486,16 @@ class _ActionButtons extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final xp = ref.watch(xpInfoProvider).valueOrNull;
+    final localStats = ref.watch(localTodayStatsProvider);
+
+    // Bugün soru çözümü VEYA tamamlanan ders varsa streak'i göster.
+    int effectiveStreak() {
+      if (xp == null) return 0;
+      final backendCountsToday = xp.streakDays > xp.streakBeforeToday;
+      final todayActive = backendCountsToday || localStats.completedTasks > 0;
+      return todayActive ? xp.streakBeforeToday + 1 : 0;
+    }
+    final streak = effectiveStreak();
 
     return IntrinsicHeight(
       child: Row(
@@ -558,8 +582,8 @@ class _ActionButtons extends ConsumerWidget {
                               fontSize: 15,
                               color: AppColors.primary)),
                       Text(
-                        xp != null && xp.streakDays > 0
-                            ? '${xp.streakDays} günlük seri'
+                        streak > 0
+                            ? '$streak günlük seri'
                             : 'Takvimi incele',
                         style: const TextStyle(
                             fontSize: 12,

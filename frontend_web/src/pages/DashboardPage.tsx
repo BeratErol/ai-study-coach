@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useUserProfile } from '../hooks/useUserProfile'
 import { useStudySessionStore, type StudyTask } from '../stores/studySessionStore'
 import StudySessionModal from '../components/StudySessionModal'
-import { getStudyPlan, type StudyDayView } from '../services/studyPlanLocal'
+import { getStudyPlan, isPlanExpired, generateAndStorePlan, type StudyDayView } from '../services/studyPlanLocal'
+import { saveOnboardingData } from '../services/userPrefsService'
 import {
   getManualTasks, saveManualTasks,
   getQuickNotes, saveQuickNotes,
@@ -17,6 +18,7 @@ import { getSubjectsForExam } from '../data/subjectsData'
 import { getTopicsForSubject } from '../data/subjectTopics'
 import { getOnboardingData, getExamGoal } from '../services/userPrefsService'
 import { getUserId } from '../services/tokenService'
+import type { OnboardingData } from '../models/OnboardingData'
 
 // ─── Yardımcılar ──────────────────────────────────────────────────────────────
 
@@ -173,6 +175,183 @@ function RestConfirmModal({ onClose, onConfirm }: { onClose: () => void; onConfi
           style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
         >
           Evet, dinleneceğim
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ─── Haftalık plan yenileme: aynı derslerle ──────────────────────────────────
+
+function RenewSameModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => void }) {
+  const uid = getUserId()
+  const data = uid ? getOnboardingData(uid) : null
+  const weak = data?.weakSubjects ?? []
+  const strong = data?.strongSubjects ?? []
+  return (
+    <ModalShell title="🔁 Aynı Derslerle Yeni Program" onClose={onClose}>
+      <p className="text-base mb-5" style={{ color: 'var(--text-primary)' }}>
+        Mevcut ders profilinle yeni 7 günlük program oluşturulacak.
+      </p>
+      <div className="space-y-4 mb-6">
+        <div>
+          <p className="text-sm font-bold mb-2" style={{ color: '#EA580C' }}>⚡ Zorlandığın Dersler</p>
+          <div className="flex flex-wrap gap-2">
+            {weak.length === 0
+              ? <span className="text-sm" style={{ color: 'var(--text-hint)' }}>Seçili değil</span>
+              : weak.map((s) => (
+                <span key={s} className="px-3 py-1.5 rounded-lg text-sm font-semibold"
+                  style={{ background: '#FFEDD5', color: '#9A3412' }}>{s}</span>
+              ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-sm font-bold mb-2" style={{ color: '#16A34A' }}>💪 Güçlü Olduğun Dersler</p>
+          <div className="flex flex-wrap gap-2">
+            {strong.length === 0
+              ? <span className="text-sm" style={{ color: 'var(--text-hint)' }}>Seçili değil</span>
+              : strong.map((s) => (
+                <span key={s} className="px-3 py-1.5 rounded-lg text-sm font-semibold"
+                  style={{ background: '#DCFCE7', color: '#15803D' }}>{s}</span>
+              ))}
+          </div>
+        </div>
+      </div>
+      <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
+        Bu derslere göre program oluşturulacaktır, emin misin?
+      </p>
+      <div className="flex gap-3">
+        <button
+          onClick={onClose}
+          className="flex-1 py-3.5 rounded-xl text-base font-semibold"
+          style={{ background: 'var(--bg)', color: 'var(--text-secondary)', border: '1.5px solid var(--border)' }}
+        >
+          Vazgeç
+        </button>
+        <button
+          onClick={onConfirm}
+          disabled={weak.length === 0}
+          className="flex-1 py-3.5 rounded-xl text-base font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+          style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
+        >
+          Evet, oluştur
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ─── Haftalık plan yenileme: dersleri değiştirerek ────────────────────────────
+
+function RenewChangeModal({ onClose, onConfirm }: {
+  onClose: () => void
+  onConfirm: (patch: Partial<OnboardingData>) => void
+}) {
+  const uid = getUserId()
+  const data = uid ? getOnboardingData(uid) : null
+  const targetExam = data?.targetExam ?? ''
+  const selectedArea = data?.selectedArea ?? ''
+  const isFullyManual = targetExam === 'OkulSinavi' && selectedArea === 'uni_diger'
+
+  const baseSubjects = useMemo(
+    () => (isFullyManual ? [] : getSubjectsForExam(targetExam, selectedArea)),
+    [targetExam, selectedArea, isFullyManual],
+  )
+  const baseNames = useMemo(() => new Set(baseSubjects.map((s) => s.name)), [baseSubjects])
+
+  const [strong, setStrong] = useState<string[]>(data?.strongSubjects ?? [])
+  const [weak, setWeak] = useState<string[]>(data?.weakSubjects ?? [])
+  const customSubjects = data?.customSubjects ?? []
+  const [error, setError] = useState<string | null>(null)
+
+  const allSubjects = useMemo(() => {
+    const extras = customSubjects
+      .filter((n) => !baseNames.has(n))
+      .map((n) => ({ name: n, emoji: '📝' as const }))
+    return [...baseSubjects, ...extras]
+  }, [baseSubjects, baseNames, customSubjects])
+
+  function toggle(name: string, target: 'strong' | 'weak') {
+    if (target === 'strong') {
+      setStrong((prev) => (prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name]))
+      setWeak((prev) => prev.filter((s) => s !== name))
+    } else {
+      setWeak((prev) => (prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name]))
+      setStrong((prev) => prev.filter((s) => s !== name))
+    }
+    setError(null)
+  }
+
+  function submit() {
+    if (isFullyManual ? customSubjects.length === 0 : weak.length === 0) {
+      setError('Program oluşturmak için en az 1 zayıf ders seçmelisin.')
+      return
+    }
+    onConfirm({ strongSubjects: strong, weakSubjects: weak, customSubjects })
+  }
+
+  function chips(label: string, color: string, selected: string[], target: 'strong' | 'weak') {
+    return (
+      <div>
+        <p className="text-sm font-bold mb-2" style={{ color }}>{label}</p>
+        <div className="flex flex-wrap gap-2">
+          {allSubjects.map((s) => {
+            const isSel = selected.includes(s.name)
+            const otherList = target === 'strong' ? weak : strong
+            const disabled = otherList.includes(s.name)
+            return (
+              <button
+                key={s.name}
+                onClick={() => !disabled && toggle(s.name, target)}
+                disabled={disabled}
+                className="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
+                style={{
+                  background: isSel ? color : 'var(--bg)',
+                  color: isSel ? '#fff' : disabled ? 'var(--text-hint)' : 'var(--text-secondary)',
+                  border: `1.5px solid ${isSel ? color : 'var(--border)'}`,
+                  opacity: disabled ? 0.4 : 1,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {s.emoji} {s.name}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ModalShell
+      title="✏️ Dersleri Değiştir"
+      subtitle="Eklemek veya çıkarmak istediğin dersleri seç"
+      onClose={onClose}
+    >
+      <div className="space-y-4">
+        {chips('💪 Güçlü Olduğun Dersler', '#16A34A', strong, 'strong')}
+        {chips('⚡ Zorlandığın Dersler', '#EA580C', weak, 'weak')}
+        {error && (
+          <div className="px-4 py-3 rounded-xl text-sm font-medium"
+            style={{ background: '#FEF2F2', color: '#DC2626', border: '1.5px solid #FCA5A5' }}>
+            ⚠️ {error}
+          </div>
+        )}
+      </div>
+      <div className="flex gap-3 mt-6">
+        <button
+          onClick={onClose}
+          className="flex-1 py-3.5 rounded-xl text-base font-semibold"
+          style={{ background: 'var(--bg)', color: 'var(--text-secondary)', border: '1.5px solid var(--border)' }}
+        >
+          Vazgeç
+        </button>
+        <button
+          onClick={submit}
+          className="flex-1 py-3.5 rounded-xl text-base font-bold text-white transition-all hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
+        >
+          Oluştur
         </button>
       </div>
     </ModalShell>
@@ -701,6 +880,8 @@ export default function DashboardPage() {
   const [showRestConfirm, setShowRestConfirm] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
   const [pendingStart, setPendingStart] = useState<DayTask | null>(null)
+  const [showRenewSame, setShowRenewSame] = useState(false)
+  const [showRenewChange, setShowRenewChange] = useState(false)
   const [noteTitle, setNoteTitle] = useState('')
   const [noteContent, setNoteContent] = useState('')
   const [noteConfirmId, setNoteConfirmId] = useState<string | null>(null)
@@ -741,6 +922,32 @@ export default function DashboardPage() {
   const today = new Date()
   const todayStr = ymd(today)
   const isRestToday = restDays.includes(todayStr)
+
+  // Plan süresi doldu mu? Doluysa dashboard task listesi yerine "Yeni Program
+  // Oluştur" akışı gösterilir. plan değişince yeniden hesaplanır.
+  const planExpired = useMemo(() => isPlanExpired(plan), [plan])
+
+  function regeneratePlan(nextOnboarding?: Partial<OnboardingData>) {
+    const uid = getUserId()
+    if (!uid) return
+    const current = getOnboardingData(uid)
+    if (!current) return
+    const updated = nextOnboarding ? { ...current, ...nextOnboarding } : current
+    if (nextOnboarding) {
+      saveOnboardingData(uid, updated)
+    }
+    generateAndStorePlan(uid, updated)
+    // Yeni plan üretildi — bugünün eski tamamlama/atama kayıtları artık geçersiz
+    // (blok id'leri değişti). Bugünü sıfırla; geçmiş günler korunur.
+    saveCompletedTaskIds(new Set())
+    saveTopicAssignments({})
+    setCompletedIds(new Set())
+    setTopicAssignments({})
+    reloadLocal()
+    setShowRenewSame(false)
+    setShowRenewChange(false)
+    showToast('Yeni haftalık programın hazır! 🎉')
+  }
 
   const todayPlan = useMemo(
     () => plan.find((d) => d.date.startsWith(todayStr)) ?? plan[0] ?? null,
@@ -874,6 +1081,19 @@ export default function DashboardPage() {
     saveManualTasks(next)
   }
 
+  function removeManualTask(id: string) {
+    const next = manualTasks.filter((t) => t.id !== id)
+    setManualTasks(next)
+    saveManualTasks(next)
+    // Tamamlanma kaydı varsa da temizle
+    const nextDone = new Set(completedIds)
+    if (nextDone.delete(id)) {
+      saveCompletedTaskIds(nextDone)
+      setCompletedIds(nextDone)
+      removeCompletedLesson(todayStr, id)
+    }
+  }
+
   function saveTopics(map: Record<string, string>) {
     setTopicAssignments(map)
     saveTopicAssignments(map)
@@ -883,11 +1103,8 @@ export default function DashboardPage() {
     const next = [...restDays, todayStr]
     setRestDays(next)
     saveRestDays(next)
-    // Bugünkü tüm görevleri tamamlandı say (mobil ile aynı)
-    const ids = getCompletedTaskIds()
-    todayTasks.forEach((t) => ids.add(t.id))
-    saveCompletedTaskIds(ids)
-    setCompletedIds(ids)
+    // Tamamlanmamış görevleri otomatik tamamlama; yalnızca kullanıcının
+    // önceden işaretlediği görevler tamamlanmış kalır.
     setShowRestConfirm(false)
     showToast('Dinlenme modu aktif. İyi dinlenmeler! 🌙')
   }
@@ -1025,6 +1242,35 @@ export default function DashboardPage() {
                 <div key={i} className="h-20 rounded-2xl animate-pulse" style={{ background: 'var(--bg)' }} />
               ))}
             </div>
+          ) : planExpired ? (
+            <div
+              className="text-center py-12 px-6 rounded-3xl"
+              style={{ background: 'var(--card)', border: '2px solid rgba(79,70,229,0.3)' }}
+            >
+              <p className="text-6xl mb-3">🎉</p>
+              <p className="text-xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
+                Tebrikler haftalık çalışmanı tamamladın!
+              </p>
+              <p className="text-base mt-2" style={{ color: 'var(--text-secondary)' }}>
+                Yeni haftaya hazır mısın? Aynı derslerle devam edebilir ya da ders profilini güncelleyebilirsin.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
+                <button
+                  onClick={() => setShowRenewSame(true)}
+                  className="py-4 rounded-2xl text-base font-extrabold text-white transition-all hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
+                >
+                  🔁 Aynı Derslerle Yeni Program
+                </button>
+                <button
+                  onClick={() => setShowRenewChange(true)}
+                  className="py-4 rounded-2xl text-base font-extrabold transition-all hover:opacity-90"
+                  style={{ background: 'var(--bg)', color: 'var(--primary)', border: '2px solid var(--primary)' }}
+                >
+                  ✏️ Dersleri Değiştir
+                </button>
+              </div>
+            </div>
           ) : isRestToday ? (
             <div className="text-center py-16 rounded-3xl" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
               <p className="text-5xl mb-3">😴</p>
@@ -1139,7 +1385,14 @@ export default function DashboardPage() {
           onClose={() => setShowAddMenu(false)}
           onTopic={() => { setShowAddMenu(false); setShowTopicEditor(true) }}
           onManual={() => { setShowAddMenu(false); setShowManual(true) }}
-          onRest={() => { setShowAddMenu(false); setShowRestConfirm(true) }}
+          onRest={() => {
+            setShowAddMenu(false)
+            if (isRestToday) {
+              showToast('Zaten dinlenme modundasın 😴')
+              return
+            }
+            setShowRestConfirm(true)
+          }}
         />
       )}
       {showRestConfirm && (
@@ -1163,39 +1416,74 @@ export default function DashboardPage() {
       {showWeekly && (
         <WeeklyPlanModal plan={plan} assignments={topicAssignments} onClose={() => setShowWeekly(false)} />
       )}
-      {pendingStart && (
-        <ModalShell title="Derse Başla" onClose={() => setPendingStart(null)}>
-          <div className="text-center">
-            <p className="text-5xl mb-3">{pendingStart.emoji}</p>
-            <p className="text-xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
-              {pendingStart.subjectName}
-            </p>
-            <p className="text-base mt-1" style={{ color: 'var(--text-secondary)' }}>
-              {taskTypeLabel(pendingStart.taskType)} · {pendingStart.durationMinutes} dakika
-            </p>
-            {(topicAssignments[pendingStart.id] || pendingStart.topicName) && (
-              <p className="text-base mt-1" style={{ color: 'var(--primary)' }}>
-                Konu: {topicAssignments[pendingStart.id] || pendingStart.topicName}
+      {pendingStart && (() => {
+        const t = pendingStart
+        const isDone = completedIds.has(t.id)
+        const isManual = !t.id.startsWith('s_') && !t.id.startsWith('w_') && !t.id.startsWith('m_')
+        return (
+          <ModalShell title={isDone ? 'Tamamlanan Ders' : 'Derse Başla'} onClose={() => setPendingStart(null)}>
+            <div className="text-center">
+              <p className="text-5xl mb-3">{t.emoji}</p>
+              <p className="text-xl font-extrabold" style={{ color: 'var(--text-primary)' }}>
+                {t.subjectName}
               </p>
-            )}
-          </div>
-          <div className="flex gap-3 mt-7">
-            <button
-              onClick={() => setPendingStart(null)}
-              className="flex-1 py-3.5 rounded-xl text-base font-semibold"
-              style={{ background: 'var(--bg)', color: 'var(--text-secondary)', border: '1.5px solid var(--border)' }}
-            >
-              Vazgeç
-            </button>
-            <button
-              onClick={confirmStart}
-              className="flex-1 py-3.5 rounded-xl text-base font-bold text-white transition-all hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
-            >
-              ▶ Dersi Başlat
-            </button>
-          </div>
-        </ModalShell>
+              <p className="text-base mt-1" style={{ color: 'var(--text-secondary)' }}>
+                {isDone ? '✓ Tamamlandı' : `${taskTypeLabel(t.taskType)} · ${t.durationMinutes} dakika`}
+              </p>
+              {(topicAssignments[t.id] || t.topicName) && (
+                <p className="text-base mt-1" style={{ color: 'var(--primary)' }}>
+                  Konu: {topicAssignments[t.id] || t.topicName}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col gap-3 mt-7">
+              <button
+                onClick={confirmStart}
+                className="w-full py-3.5 rounded-xl text-base font-bold text-white transition-all hover:opacity-90 flex items-center justify-center gap-2"
+                style={{ background: isDone ? '#059669' : 'linear-gradient(135deg, #4F46E5, #6D28D9)' }}
+              >
+                {isDone ? '🔁 Tekrar Çalış' : '▶ Dersi Başlat'}
+              </button>
+              {isDone && (
+                <button
+                  onClick={() => { setPendingStart(null); toggleComplete(t) }}
+                  className="w-full py-3 rounded-xl text-base font-semibold transition-all hover:opacity-90"
+                  style={{ background: 'transparent', color: '#F97316', border: '1.5px solid #FED7AA' }}
+                >
+                  ⊖ Tamamlamayı Kaldır
+                </button>
+              )}
+              {isManual && !isDone && (
+                <button
+                  onClick={() => { setPendingStart(null); removeManualTask(t.id) }}
+                  className="w-full py-3 rounded-xl text-base font-semibold transition-all hover:opacity-90"
+                  style={{ background: 'transparent', color: '#DC2626', border: '1.5px solid #FCA5A5' }}
+                >
+                  🗑 Görevi Kaldır
+                </button>
+              )}
+              <button
+                onClick={() => setPendingStart(null)}
+                className="w-full py-3 rounded-xl text-base font-semibold"
+                style={{ background: 'var(--bg)', color: 'var(--text-secondary)', border: '1.5px solid var(--border)' }}
+              >
+                Kapat
+              </button>
+            </div>
+          </ModalShell>
+        )
+      })()}
+      {showRenewSame && (
+        <RenewSameModal
+          onClose={() => setShowRenewSame(false)}
+          onConfirm={() => regeneratePlan()}
+        />
+      )}
+      {showRenewChange && (
+        <RenewChangeModal
+          onClose={() => setShowRenewChange(false)}
+          onConfirm={(patch) => regeneratePlan(patch)}
+        />
       )}
       {showInfo && (
         <ModalShell title="ℹ️ Bilgilendirme" onClose={() => setShowInfo(false)}>

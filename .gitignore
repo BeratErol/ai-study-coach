@@ -14,8 +14,11 @@ repomix-output.xml
 *.suo
 
 # ─── Secrets (asla commit etme) ─────────────────────────────────────
-# Backend lokal ayarlar — gerçek API key, JWT, DB şifresi burada tutulur.
-# Sadece appsettings.json (boş şablon) commit'lenir; .Development.json local kalır.
+# Backend lokal ayarlar — gerçek API key, JWT, DB şifresi sadece
+# appsettings.Development.json (lokal) içinde tutulur. appsettings.json
+# takipten çıkarıldı; yeni geliştirici için boş şablon
+# Backend/appsettings.Example.json commit edilir.
+Backend/appsettings.json
 appsettings.Development.json
 appsettings.Production.json
 appsettings.Local.json

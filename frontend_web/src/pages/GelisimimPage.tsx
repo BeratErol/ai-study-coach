@@ -678,6 +678,16 @@ export default function GelisimimPage() {
   const effectiveXp = xp ? applyXpBoost(xp, localXpBoost) : null
   const xpFraction = effectiveXp ? xpProgressFraction(effectiveXp) : 0
 
+  // Streak: bugün herhangi bir aktivite varsa (soru çözümü VEYA tamamlanan ders)
+  // bugünü aktif say. Backend zaten soru/oturum varsa bugünü streak'e ekliyor;
+  // tamamlanan ders local olduğu için biz burada güncelliyoruz.
+  const effectiveStreak = useMemo(() => {
+    if (!xp) return 0
+    const backendCountsToday = xp.streakDays > xp.streakBeforeToday
+    const todayActive = backendCountsToday || localCompleted > 0
+    return todayActive ? xp.streakBeforeToday + 1 : 0
+  }, [xp, localCompleted])
+
   // Soru gelişimi için ders havuzu
   const questionSubjects = useMemo(() => {
     const targetExam = localData?.targetExam || ''
@@ -699,12 +709,12 @@ export default function GelisimimPage() {
           style={{ background: 'linear-gradient(135deg, #059669, #10B981)' }}
         >
           {/* Sol üst: streak (o gün çalışma varsa) */}
-          {(effectiveXp?.streakDays ?? 0) > 0 && (
+          {(effectiveStreak ?? 0) > 0 && (
             <span
               className="absolute top-8 left-8 sm:left-10 px-5 py-2.5 rounded-full text-lg font-bold text-white"
               style={{ background: 'rgba(255,255,255,0.25)' }}
             >
-              🔥 {effectiveXp?.streakDays} Gün
+              🔥 {effectiveStreak} Gün
             </span>
           )}
 
@@ -784,7 +794,7 @@ export default function GelisimimPage() {
               <div className="text-left">
                 <p className="text-lg font-extrabold" style={{ color: 'var(--primary)' }}>Geçmişi Gör</p>
                 <p className="text-base" style={{ color: 'var(--text-secondary)' }}>
-                  {(effectiveXp?.streakDays ?? 0) > 0 ? `${effectiveXp?.streakDays} günlük seri` : 'Takvimi incele'}
+                  {(effectiveStreak ?? 0) > 0 ? `${effectiveStreak} günlük seri` : 'Takvimi incele'}
                 </p>
               </div>
             </button>

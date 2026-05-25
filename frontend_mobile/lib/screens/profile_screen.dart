@@ -35,6 +35,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final String _educationLevel = '';
   final _dersProfilimKey = GlobalKey<_DersProfilimSectionState>();
 
+  String _educationLabel(String level) {
+    switch (level) {
+      case 'ortaokul':  return 'Ortaokul';
+      case 'lise':      return 'Lise';
+      case 'universite': return 'Üniversite / Mezun';
+      default:          return level;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +82,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final educationLevel = onboardingAsync.value?.educationLevel ?? _educationLevel;
     final targetExam = onboardingAsync.value?.targetExam ?? '';
+    // Onboarding'de girilen tam ad — JWT'deki kısaltılmış ad değil.
+    final onboardingName = (onboardingAsync.value?.name ?? '').trim();
+    final displayName = onboardingName.isNotEmpty ? onboardingName : _userName;
 
     return Scaffold(
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
@@ -138,7 +150,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        (_userName.isNotEmpty ? _userName : 'Kullanıcı').toUpperCase(),
+                        (displayName.isNotEmpty ? displayName : 'Kullanıcı').toUpperCase(),
                         style: const TextStyle(
                             color: Colors.white,
                             fontSize: 22,
@@ -147,7 +159,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       if (educationLevel.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
-                          educationLevel.toUpperCase(),
+                          _educationLabel(educationLevel),
                           style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.75),
                               fontSize: 15,
@@ -1149,6 +1161,23 @@ class _DersProfilimSectionState
   }
 
   Future<void> _save(OnboardingData data) async {
+    final newDataWeak = _pendingWeak ?? data.weakSubjects;
+    final newDataCustom = _pendingCustom ?? data.customSubjects;
+    final isOkulDiger = data.targetExam == 'OkulSinavi' &&
+        data.selectedArea == 'uni_diger';
+    // Zayıf ders seçilmeden program üretilemez (uni_diger: customSubjects).
+    final hasMinimumSubjects = isOkulDiger
+        ? newDataCustom.isNotEmpty
+        : newDataWeak.isNotEmpty;
+    if (!hasMinimumSubjects) {
+      _showSnack(
+        context,
+        'Program oluşturmak için en az 1 zayıf ders seçmelisin.',
+        bg: AppColors.error,
+      );
+      return;
+    }
+
     final confirm = await _showRebuildDialog(context);
     if (!confirm) return;
 
@@ -1157,8 +1186,8 @@ class _DersProfilimSectionState
 
     final newData = data.copyWith(
       strongSubjects: _pendingStrong ?? data.strongSubjects,
-      weakSubjects: _pendingWeak ?? data.weakSubjects,
-      customSubjects: _pendingCustom ?? data.customSubjects,
+      weakSubjects: newDataWeak,
+      customSubjects: newDataCustom,
     );
 
     // Ders havuzu değişti mi? (sınav türü/alan veya güçlü/zayıf/custom listeleri)

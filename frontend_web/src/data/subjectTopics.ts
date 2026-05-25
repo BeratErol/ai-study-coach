@@ -81,7 +81,7 @@ export const subjectTopics: Record<string, string[]> = {
   'Fen Bilimleri': ['Hücre Bölünmesi', 'Kuvvet ve Enerji', 'Işık ve Ses', 'Maddenin Halleri', 'Kimyasal Tepkimeler'],
   'T.C. İnkılap Tarihi': ['Kurtuluş Savaşı', 'Atatürk İnkılapları', 'Cumhuriyet Tarihi'],
   'Din Kültürü': ['İbadetler', 'Ahlak', 'İslam Tarihi'],
-  İngilizce: ['Kelime Bilgisi', 'Dilbilgisi', 'Okuma', 'Dinleme'],
+  İngilizce: ['Kelime Bilgisi', 'Dil Bilgisi', 'Okuma', 'Dinleme'],
 
   // ── ALES ─────────────────────────────────────────────────────────────────
   'Sayısal (Matematik)': ['Temel Matematik', 'Problemler', 'Veri Yorumlama', 'Geometri'],

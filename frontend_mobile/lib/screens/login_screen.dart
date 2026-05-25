@@ -122,6 +122,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       // Profil var → onboarding tamamlandı. Senkron verileri backend'den indir.
       await UserPrefsService.setOnboardingCompleted(userId, true);
       await AppStateService.hydrateAppState();
+      // Hydrate sonrası tüm cache'leyen provider'ları sıfırla — başka cihazda
+      // (web) yapılan dinlenme, tamamlanan görev, plan vb. değişiklikler bu
+      // cihazın ilk açılışında anında görünür.
+      ref.invalidate(restDaysProvider);
+      ref.invalidate(completedTaskIdsProvider);
+      ref.invalidate(topicAssignmentsProvider);
+      ref.invalidate(manualTasksProvider);
+      ref.invalidate(studyPlanProvider);
+      ref.invalidate(todayTasksProvider);
+      ref.invalidate(onboardingDataProvider);
+      ref.invalidate(chatbotProvider);
       if (mounted) context.go('/dashboard');
     } else if (profileExists == false) {
       // Açıkça 404 → backend'de profil yok → onboarding gerekli

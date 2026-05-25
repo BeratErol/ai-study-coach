@@ -98,4 +98,48 @@ const List<ExamTypeInfo> kExamTypes = [
       LessonSlot('Genel Kültür', 60),
     ],
   ),
+  ExamTypeInfo(
+    displayName: 'ALES',
+    apiType: 'ALES',
+    lessons: [
+      LessonSlot('Sayısal', 50),
+      LessonSlot('Sözel', 50),
+    ],
+  ),
+  ExamTypeInfo(
+    displayName: 'YDS / e-YDS',
+    apiType: 'YDS',
+    lessons: [
+      LessonSlot('Vocabulary', 6),
+      LessonSlot('Grammar', 10),
+      LessonSlot('Cloze Test', 10),
+      LessonSlot('Sentence Completion', 10),
+      LessonSlot('Translation', 6),
+      LessonSlot('Reading Passages', 20),
+      LessonSlot('Dialogue Completion', 5),
+      LessonSlot('Restatement', 4),
+      LessonSlot('Paragraph Completion', 4),
+      LessonSlot('Irrelevant Sentence', 5),
+    ],
+  ),
+  ExamTypeInfo(
+    displayName: 'ÖABT',
+    apiType: 'OABT',
+    lessons: [
+      LessonSlot('Alan Bilgisi', 40),
+      LessonSlot('Alan Eğitimi', 10),
+    ],
+  ),
+  ExamTypeInfo(
+    displayName: 'AGS (MEB Akademi Giriş)',
+    apiType: 'AGS',
+    lessons: [
+      LessonSlot('Sözel Yetenek', 15),
+      LessonSlot('Matematik (Sayısal Yetenek)', 15),
+      LessonSlot('Eğitim Bilimleri', 30),
+      LessonSlot('Mevzuat', 8),
+      LessonSlot('Tarih', 6),
+      LessonSlot('Türkiye Coğrafyası', 6),
+    ],
+  ),
 ];

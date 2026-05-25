@@ -92,9 +92,57 @@ export const examTypes: ExamTypeInfo[] = [
       { name: 'Genel Kültür', maxQuestions: 60 },
     ],
   },
+  {
+    displayName: 'ALES',
+    apiType: 'ALES',
+    lessons: [
+      { name: 'Sayısal', maxQuestions: 50 },
+      { name: 'Sözel', maxQuestions: 50 },
+    ],
+  },
+  {
+    displayName: 'YDS / e-YDS',
+    apiType: 'YDS',
+    lessons: [
+      { name: 'Vocabulary', maxQuestions: 6 },
+      { name: 'Grammar', maxQuestions: 10 },
+      { name: 'Cloze Test', maxQuestions: 10 },
+      { name: 'Sentence Completion', maxQuestions: 10 },
+      { name: 'Translation', maxQuestions: 6 },
+      { name: 'Reading Passages', maxQuestions: 20 },
+      { name: 'Dialogue Completion', maxQuestions: 5 },
+      { name: 'Restatement', maxQuestions: 4 },
+      { name: 'Paragraph Completion', maxQuestions: 4 },
+      { name: 'Irrelevant Sentence', maxQuestions: 5 },
+    ],
+  },
+  {
+    displayName: 'ÖABT',
+    apiType: 'OABT',
+    lessons: [
+      { name: 'Alan Bilgisi', maxQuestions: 40 },
+      { name: 'Alan Eğitimi', maxQuestions: 10 },
+    ],
+  },
+  {
+    displayName: 'AGS (MEB Akademi Giriş)',
+    apiType: 'AGS',
+    lessons: [
+      { name: 'Sözel Yetenek', maxQuestions: 15 },
+      { name: 'Matematik (Sayısal Yetenek)', maxQuestions: 15 },
+      { name: 'Eğitim Bilimleri', maxQuestions: 30 },
+      { name: 'Mevzuat', maxQuestions: 8 },
+      { name: 'Tarih', maxQuestions: 6 },
+      { name: 'Türkiye Coğrafyası', maxQuestions: 6 },
+    ],
+  },
 ]
 
-/** Kullanıcının sınavına/alanına göre hangi deneme türlerinin gösterileceğini belirler. */
+/**
+ * Sınava göre hangi deneme türlerinin gösterileceğini döner. Bilinmeyen sınav
+ * için boş liste — "tüm türleri göster" fallback'i yoktur, her sınav kendi
+ * havuzuna sahip olmak zorunda.
+ */
 export function availableExamTypes(targetExam: string, selectedArea: string): ExamTypeInfo[] {
   const exam = targetExam.toUpperCase()
   const area = selectedArea.toUpperCase()
@@ -105,14 +153,29 @@ export function availableExamTypes(targetExam: string, selectedArea: string): Ex
     else if (area.includes('SÖZEL') || area.includes('SOZEL')) allowed = ['TYT', 'AYT_SOZEL', 'BRANS']
     else if (area.includes('DİL') || area.includes('DIL')) allowed = ['TYT', 'AYT_DIL', 'BRANS']
     else allowed = ['TYT', 'AYT_SAYISAL', 'AYT_EA', 'AYT_SOZEL', 'AYT_DIL', 'BRANS']
-  } else if (exam === 'KPSS') {
-    allowed = ['KPSS_LISANS', 'BRANS']
-  } else if (exam === 'LGS') {
-    allowed = ['LGS', 'BRANS']
-  } else {
-    return examTypes
-  }
+  } else if (exam === 'TYT') allowed = ['TYT']
+  else if (exam === 'AYT') allowed = ['AYT_SAYISAL', 'AYT_EA', 'AYT_SOZEL', 'AYT_DIL', 'BRANS']
+  else if (exam === 'YDT') allowed = ['AYT_DIL']
+  else if (exam === 'KPSS') allowed = ['KPSS_LISANS', 'BRANS']
+  else if (exam === 'LGS') allowed = ['LGS', 'BRANS']
+  else if (exam === 'ALES') allowed = ['ALES']
+  else if (exam === 'YDS') allowed = ['YDS']
+  else if (exam === 'ÖĞRETMENLIK' || exam === 'OGRETMENLIK' || exam === 'ÖĞRETMENLİK') allowed = ['AGS', 'OABT']
+  else if (exam === 'OKULSINAVI' || exam === 'OKUL_SINAVI') allowed = ['OKUL_SINAVI']
+  else return []
   return examTypes.filter((t) => allowed.includes(t.apiType))
+}
+
+/**
+ * Okul Sınavı için dinamik deneme türü — kullanıcının seçtiği derslerden
+ * (varsayılan + custom) oluşturulur. Mobil ile birebir mantık.
+ */
+export function buildOkulSinaviType(subjectNames: string[]): ExamTypeInfo {
+  return {
+    displayName: 'Sınav/Çıkmış Denemesi',
+    apiType: 'OKUL_SINAVI',
+    lessons: subjectNames.map((n) => ({ name: n, maxQuestions: 20 })),
+  }
 }
 
 /** BRANS türü için, diğer türlerin derslerinden benzersiz bir ders havuzu üretir. */

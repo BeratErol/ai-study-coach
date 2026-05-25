@@ -16,6 +16,7 @@ export interface XpInfo {
   levelName: string
   levelEmoji: string
   streakDays: number
+  streakBeforeToday: number
   totalQuestions: number
 }
 
@@ -67,6 +68,7 @@ export function applyXpBoost(base: XpInfo, boost: number): XpInfo {
     levelName: lvl.levelName,
     levelEmoji: lvl.levelEmoji,
     streakDays: base.streakDays,
+    streakBeforeToday: base.streakBeforeToday,
     totalQuestions: base.totalQuestions,
   }
 }
@@ -95,6 +97,7 @@ export const gelisimimService = {
       levelName: d.levelName ?? 'Çırak Öğrenci',
       levelEmoji: d.levelEmoji ?? '🌱',
       streakDays: d.streakDays ?? 0,
+      streakBeforeToday: d.streakBeforeToday ?? 0,
       totalQuestions: d.totalQuestions ?? 0,
     }
   },
