@@ -13,7 +13,7 @@ import {
   addCompletedLesson, removeCompletedLesson,
   type ManualTask, type QuickNote,
 } from '../services/localData'
-import { hydrateAppState } from '../services/appStateService'
+import { hydrateAppState, pushAppState } from '../services/appStateService'
 import { getSubjectsForExam } from '../data/subjectsData'
 import { getTopicsForSubject } from '../data/subjectTopics'
 import { getOnboardingData, getExamGoal } from '../services/userPrefsService'
@@ -937,6 +937,10 @@ export default function DashboardPage() {
       saveOnboardingData(uid, updated)
     }
     generateAndStorePlan(uid, updated)
+    // İlk plan yenilemesinden itibaren Gelişimim "Tüm Zamanlar" haftalık
+    // gruplama moduna geçer (kullanıcı bu butona en az 1 kez bastı demektir).
+    pushAppState('weekly_history_enabled', true)
+    localStorage.setItem(`user_${uid}_weekly_history_enabled`, 'true')
     // Yeni plan üretildi — bugünün eski tamamlama/atama kayıtları artık geçersiz
     // (blok id'leri değişti). Bugünü sıfırla; geçmiş günler korunur.
     saveCompletedTaskIds(new Set())

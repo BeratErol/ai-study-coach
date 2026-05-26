@@ -85,23 +85,79 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
                         // (rest_days listesi). Bugün filtresi → bugün rest mi,
                         // tüm zamanlar → liste uzunluğu.
                         final restList = ref.watch(restDaysProvider);
-                        final merged = filter == 'today'
-                            ? GelisimimStats(
-                                completedTasks: localStats.completedTasks,
-                                totalMinutes: localStats.totalMinutes,
-                                totalQuestions: s.totalQuestions,
-                                restDays: localStats.restDays,
-                              )
-                            : GelisimimStats(
-                                completedTasks: s.completedTasks +
-                                    localStats.completedTasks +
-                                    (pastLocal?.completedTasks ?? 0),
-                                totalMinutes: s.totalMinutes +
-                                    localStats.totalMinutes +
-                                    (pastLocal?.totalMinutes ?? 0),
-                                totalQuestions: s.totalQuestions,
-                                restDays: restList.length,
-                              );
+                        // "Tüm Zamanlar" iken aktif kapsam (current vs total).
+                        final allScope =
+                            ref.watch(activeAllScopeProvider);
+                        // Mevcut program penceresi (start..end) — current scope için filtre.
+                        final plan = ref.watch(studyPlanProvider).value ?? [];
+                        String? planStartStr;
+                        String? planEndStr;
+                        if (plan.isNotEmpty) {
+                          String fmt(DateTime d) =>
+                              '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                          planStartStr = fmt(plan.first.date);
+                          planEndStr = fmt(plan.last.date);
+                        }
+                        bool inWindow(String date) {
+                          final s = planStartStr;
+                          final e = planEndStr;
+                          if (s == null || e == null) return true;
+                          return date.compareTo(s) >= 0 &&
+                              date.compareTo(e) <= 0;
+                        }
+                        final today = DateTime.now();
+                        final todayStr =
+                            '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+                        final todayInWindow = inWindow(todayStr);
+
+                        GelisimimStats merged;
+                        if (filter == 'today') {
+                          merged = GelisimimStats(
+                            completedTasks: localStats.completedTasks,
+                            totalMinutes: localStats.totalMinutes,
+                            totalQuestions: s.totalQuestions,
+                            restDays: localStats.restDays,
+                          );
+                        } else if (allScope == 'current') {
+                          // Mevcut Program kapsamı: backend total'i kullanmaz;
+                          // sadece plan penceresine düşen lokal kayıtları toplar.
+                          final currentLocal =
+                              ref.watch(currentPlanLocalStatsProvider).value;
+                          final questionsByDay =
+                              ref.watch(questionsByDayProvider).value ?? const [];
+                          final qInWindow = questionsByDay
+                              .where((r) => inWindow(r.date))
+                              .fold<int>(
+                                  0,
+                                  (sum, r) =>
+                                      sum +
+                                      r.questions.fold<int>(
+                                          0, (a, q) => a + q.count));
+                          final restInWindow = restList
+                              .where((d) => inWindow(d))
+                              .length;
+                          merged = GelisimimStats(
+                            completedTasks:
+                                (currentLocal?.completedTasks ?? 0) +
+                                    (todayInWindow ? localStats.completedTasks : 0),
+                            totalMinutes:
+                                (currentLocal?.totalMinutes ?? 0) +
+                                    (todayInWindow ? localStats.totalMinutes : 0),
+                            totalQuestions: qInWindow,
+                            restDays: restInWindow,
+                          );
+                        } else {
+                          merged = GelisimimStats(
+                            completedTasks: s.completedTasks +
+                                localStats.completedTasks +
+                                (pastLocal?.completedTasks ?? 0),
+                            totalMinutes: s.totalMinutes +
+                                localStats.totalMinutes +
+                                (pastLocal?.totalMinutes ?? 0),
+                            totalQuestions: s.totalQuestions,
+                            restDays: restList.length,
+                          );
+                        }
                         return _StatsGrid(stats: merged);
                       },
                       loading: () => _StatsGridSkeleton(),
@@ -111,11 +167,23 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
                     // Action buttons
                     _ActionButtons(onNote: _openNote),
                     const SizedBox(height: 12),
-                    // Filter toggle
+                    // Filter toggle — "Tüm Zamanlar" tıklanınca kapsam seçim sheet'i.
                     _FilterToggle(
                       selected: filter,
-                      onChanged: (v) =>
-                          ref.read(activeFilterProvider.notifier).state = v,
+                      allScope: ref.watch(activeAllScopeProvider),
+                      weeklyHistoryOn:
+                          ref.watch(weeklyHistoryEnabledProvider).value ?? false,
+                      onChanged: (v) {
+                        if (v == 'all' &&
+                            (ref.read(weeklyHistoryEnabledProvider).value ?? false)) {
+                          _showAllScopePicker(context, ref);
+                        } else {
+                          if (v == 'all') {
+                            ref.read(activeAllScopeProvider.notifier).state = 'total';
+                          }
+                          ref.read(activeFilterProvider.notifier).state = v;
+                        }
+                      },
                     ),
                     const SizedBox(height: 24),
                     // ── Ders Dağılımı (tamamlanan dersler) ──
@@ -168,6 +236,117 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => QuickNoteSheet(messenger: messenger),
+    );
+  }
+
+  /// "Tüm Zamanlar" tıklandığında kullanıcıya kapsam soran sheet.
+  /// Yeni program oluşturulduktan sonra her tıklamada açılır.
+  void _showAllScopePicker(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Hangi Aralıkta Göstereyim?',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(
+                'Mevcut programın istatistikleri ile başlangıçtan bu yana toplamı arasında seç.',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 16),
+              _ScopeChoice(
+                emoji: '📅',
+                title: 'Mevcut Program İstatistikleri',
+                subtitle: 'Sadece şu anki 7 günlük programının kayıtları.',
+                accent: AppColors.primary,
+                onTap: () {
+                  ref.read(activeAllScopeProvider.notifier).state = 'current';
+                  ref.read(activeFilterProvider.notifier).state = 'all';
+                  Navigator.of(sheetCtx).pop();
+                },
+              ),
+              const SizedBox(height: 10),
+              _ScopeChoice(
+                emoji: '🌐',
+                title: 'Bütün Zamanların İstatistikleri',
+                subtitle:
+                    'Uygulamayı kullanmaya başladığından bu yana toplam.',
+                accent: Colors.grey.shade600,
+                onTap: () {
+                  ref.read(activeAllScopeProvider.notifier).state = 'total';
+                  ref.read(activeFilterProvider.notifier).state = 'all';
+                  Navigator.of(sheetCtx).pop();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScopeChoice extends StatelessWidget {
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _ScopeChoice({
+    required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accent.withValues(alpha: 0.5), width: 2),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 28)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: accent)),
+                  const SizedBox(height: 4),
+                  Text(subtitle,
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.grey.shade600)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -605,13 +784,24 @@ class _ActionButtons extends ConsumerWidget {
 
 class _FilterToggle extends StatelessWidget {
   final String selected;
+  final String allScope;
+  final bool weeklyHistoryOn;
   final ValueChanged<String> onChanged;
 
-  const _FilterToggle(
-      {required this.selected, required this.onChanged});
+  const _FilterToggle({
+    required this.selected,
+    required this.allScope,
+    required this.weeklyHistoryOn,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final allLabel = (selected == 'all' && weeklyHistoryOn)
+        ? (allScope == 'current'
+            ? 'Tüm Zamanlar · Mevcut Program'
+            : 'Tüm Zamanlar · Hepsi')
+        : 'Tüm Zamanlar';
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -625,7 +815,7 @@ class _FilterToggle extends StatelessWidget {
               active: selected == 'today',
               onTap: () => onChanged('today')),
           _Btn(
-              label: 'Tüm Zamanlar',
+              label: allLabel,
               active: selected == 'all',
               onTap: () => onChanged('all')),
         ],
@@ -978,6 +1168,14 @@ class _CompletedLessonsByDaySection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final daysAsync = ref.watch(completedLessonsByDayProvider);
+    final weeklyOn = ref.watch(weeklyHistoryEnabledProvider).value ?? false;
+    final planAsync = ref.watch(studyPlanProvider);
+    final planStart = planAsync.maybeWhen(
+      data: (p) => p.isNotEmpty
+          ? DateTime(p.first.date.year, p.first.date.month, p.first.date.day)
+          : null,
+      orElse: () => null,
+    );
     return daysAsync.when(
       loading: () => Container(
         height: 120,
@@ -1010,17 +1208,9 @@ class _CompletedLessonsByDaySection extends ConsumerWidget {
           );
         }
         final todayStr = _todayStr();
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final entry in days) ...[
+        Widget renderDay(CompletedLessonByDay entry) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 _DayHeaderChip(
                     date: entry.date,
                     todayStr: todayStr,
@@ -1030,8 +1220,51 @@ class _CompletedLessonsByDaySection extends ConsumerWidget {
                 ...entry.lessons.map((l) => _SimpleLessonRow(lesson: l)),
                 const SizedBox(height: 14),
               ],
-            ],
-          ),
+            );
+
+        if (!weeklyOn || planStart == null) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: days.map(renderDay).toList(),
+            ),
+          );
+        }
+
+        // Haftalık gruplama
+        final buckets = <String, List<CompletedLessonByDay>>{};
+        for (final e in days) {
+          final wk = _weekStartFor(planStart, e.date);
+          buckets.putIfAbsent(wk, () => []).add(e);
+        }
+        final currentWeek = _ymd(planStart);
+        final sortedKeys = buckets.keys.toList()
+          ..sort((a, b) => b.compareTo(a));
+        return Column(
+          children: sortedKeys.map((wk) {
+            final dayList = buckets[wk]!;
+            final totalLessons =
+                dayList.fold<int>(0, (s, e) => s + e.lessons.length);
+            final isCurrent = wk == currentWeek;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _WeekAccordion(
+                title: isCurrent ? 'Bu Hafta' : _weekRangeLabel(wk),
+                subtitle: '$totalLessons ders',
+                defaultOpen: isCurrent,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: dayList.map(renderDay).toList(),
+                ),
+              ),
+            );
+          }).toList(),
         );
       },
     );
@@ -1096,6 +1329,14 @@ class _QuestionsByDaySection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final daysAsync = ref.watch(questionsByDayProvider);
+    final weeklyOn = ref.watch(weeklyHistoryEnabledProvider).value ?? false;
+    final planAsync = ref.watch(studyPlanProvider);
+    final planStart = planAsync.maybeWhen(
+      data: (p) => p.isNotEmpty
+          ? DateTime(p.first.date.year, p.first.date.month, p.first.date.day)
+          : null,
+      orElse: () => null,
+    );
     return daysAsync.when(
       loading: () => Container(
         height: 120,
@@ -1128,21 +1369,14 @@ class _QuestionsByDaySection extends ConsumerWidget {
           );
         }
         final todayStr = _todayStr();
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final entry in days) ...[
+        Widget renderDay(QuestionsByDay entry) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 _DayHeaderChip(
                     date: entry.date,
                     todayStr: todayStr,
-                    count: entry.questions.fold<int>(0, (s, q) => s + q.count),
+                    count:
+                        entry.questions.fold<int>(0, (s, q) => s + q.count),
                     suffix: 'soru'),
                 const SizedBox(height: 8),
                 ..._sortedQ(entry.questions, (q) => q.count, descending: true)
@@ -1154,8 +1388,53 @@ class _QuestionsByDaySection extends ConsumerWidget {
                         )),
                 const SizedBox(height: 14),
               ],
-            ],
-          ),
+            );
+
+        if (!weeklyOn || planStart == null) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: days.map(renderDay).toList(),
+            ),
+          );
+        }
+
+        // Haftalık gruplama
+        final buckets = <String, List<QuestionsByDay>>{};
+        for (final e in days) {
+          final wk = _weekStartFor(planStart, e.date);
+          buckets.putIfAbsent(wk, () => []).add(e);
+        }
+        final currentWeek = _ymd(planStart);
+        final sortedKeys = buckets.keys.toList()
+          ..sort((a, b) => b.compareTo(a));
+        return Column(
+          children: sortedKeys.map((wk) {
+            final dayList = buckets[wk]!;
+            final totalQ = dayList.fold<int>(
+                0,
+                (s, e) =>
+                    s + e.questions.fold<int>(0, (q, qq) => q + qq.count));
+            final isCurrent = wk == currentWeek;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _WeekAccordion(
+                title: isCurrent ? 'Bu Hafta' : _weekRangeLabel(wk),
+                subtitle: '$totalQ soru',
+                defaultOpen: isCurrent,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: dayList.map(renderDay).toList(),
+                ),
+              ),
+            );
+          }).toList(),
         );
       },
     );
@@ -1237,4 +1516,99 @@ class _DayHeaderChip extends StatelessWidget {
 String _todayStr() {
   final d = DateTime.now();
   return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+}
+
+String _ymd(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// Verilen tarih dizesini, [planStart] referans alınarak ait olduğu haftanın
+/// başlangıç tarihine (YYYY-MM-DD) çevirir. Mevcut hafta: planStart..+6.
+String _weekStartFor(DateTime planStart, String dateStr) {
+  final d = DateTime.parse(dateStr);
+  final day = DateTime(d.year, d.month, d.day);
+  final diffDays = day.difference(planStart).inDays;
+  final weekIndex = (diffDays / 7).floor();
+  final ws = planStart.add(Duration(days: weekIndex * 7));
+  return _ymd(ws);
+}
+
+String _weekRangeLabel(String weekStartStr) {
+  final s = DateTime.parse(weekStartStr);
+  final e = s.add(const Duration(days: 6));
+  const months = [
+    'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
+    'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+  ];
+  return '${s.day} ${months[s.month - 1]} – ${e.day} ${months[e.month - 1]}';
+}
+
+class _WeekAccordion extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final bool defaultOpen;
+  final Widget child;
+  const _WeekAccordion({
+    required this.title,
+    required this.subtitle,
+    required this.defaultOpen,
+    required this.child,
+  });
+
+  @override
+  State<_WeekAccordion> createState() => _WeekAccordionState();
+}
+
+class _WeekAccordionState extends State<_WeekAccordion> {
+  late bool _open;
+
+  @override
+  void initState() {
+    super.initState();
+    _open = widget.defaultOpen;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _open = !_open),
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(widget.title,
+                        style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary)),
+                  ),
+                  Text(widget.subtitle,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textHint)),
+                  const SizedBox(width: 8),
+                  Icon(_open ? Icons.expand_less : Icons.expand_more,
+                      size: 20, color: AppColors.textHint),
+                ],
+              ),
+            ),
+          ),
+          if (_open)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              child: widget.child,
+            ),
+        ],
+      ),
+    );
+  }
 }

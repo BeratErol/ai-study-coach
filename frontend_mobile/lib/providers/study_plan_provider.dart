@@ -76,6 +76,10 @@ Future<void> regenerateStudyPlan(
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString(_weeklyPlanKey(userId), jsonEncode(jsonList));
   await AppStateService.pushAppState('weekly_plan', jsonList);
+  // İlk yenilemeden itibaren Gelişimim "Tüm Zamanlar" haftalık gruplamaya geçer.
+  await prefs.setString(
+      'user_${userId}_weekly_history_enabled', jsonEncode(true));
+  await AppStateService.pushAppState('weekly_history_enabled', true);
   // Yeni plan id'leri farklı — bugünün tamamlama/atama kayıtları artık geçersiz.
   await ref.read(completedTaskIdsProvider.notifier).clearToday();
   ref.read(topicAssignmentsProvider.notifier).clearAll();

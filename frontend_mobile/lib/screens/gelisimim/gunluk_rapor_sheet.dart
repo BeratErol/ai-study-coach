@@ -36,12 +36,23 @@ class _GunlukRaporSheetState extends ConsumerState<GunlukRaporSheet> {
     final userId = await TokenService.getUserId() ?? 'anonymous';
     final prefs = await SharedPreferences.getInstance();
 
-    // Tamamlanan görev ID'leri
-    final completedKey = 'completed_tasks_${userId}_${widget.date}';
-    final completedIds = prefs.getStringList(completedKey)?.toSet() ?? <String>{};
+    // Tamamlanan görev ID'leri (web ile ortak key formatı; legacy fallback).
+    final newKey = 'user_${userId}_completed_tasks_${widget.date}';
+    final legacyKey = 'completed_tasks_${userId}_${widget.date}';
+    Set<String> completedIds = <String>{};
+    // Yeni format: JSON list olarak String'te tutulur.
+    final rawNew = prefs.getString(newKey);
+    if (rawNew != null) {
+      try {
+        completedIds = (jsonDecode(rawNew) as List).cast<String>().toSet();
+      } catch (_) {}
+    }
+    if (completedIds.isEmpty) {
+      completedIds = prefs.getStringList(legacyKey)?.toSet() ?? <String>{};
+    }
 
-    // Haftalık planı oku, bu güne ait blokları bul
-    final planKey = 'weekly_plan_$userId';
+    // Haftalık planı oku, bu güne ait blokları bul (web ile aynı key formatı).
+    final planKey = 'user_${userId}_weekly_plan';
     final planRaw = prefs.getString(planKey);
     List<StudyBlock> dayBlocks = [];
     if (planRaw != null) {
@@ -128,7 +139,7 @@ class _GunlukRaporSheetState extends ConsumerState<GunlukRaporSheet> {
 
                   if (!hasAnything) {
                     return const _EmptyState(
-                      message: 'Bu günde planlanmış görev\nveya çözülen soru yok.',
+                      message: 'Bu güne ait kayıt bulunamadı.',
                     );
                   }
 

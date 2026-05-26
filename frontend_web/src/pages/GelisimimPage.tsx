@@ -24,6 +24,34 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Haftalık aktivite gruplaması için collapsible bölüm
+function WeekAccordion({ title, subtitle, defaultOpen, children }: {
+  title: string
+  subtitle: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen ?? false)
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-5 py-4 text-left transition-all hover:opacity-90"
+        style={{ background: 'var(--card)' }}
+      >
+        <span className="flex-1 font-extrabold" style={{ color: 'var(--primary)' }}>{title}</span>
+        <span className="text-sm" style={{ color: 'var(--text-hint)' }}>{subtitle}</span>
+        <span className="text-base" style={{ color: 'var(--text-hint)' }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="px-5 py-5" style={{ borderTop: '1px solid var(--border)' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function fmtMin(m: number): string {
   if (m < 60) return `${m}dk`
   const h = Math.floor(m / 60)
@@ -395,9 +423,13 @@ function GecmisiGorModal({ completedLessons, onClose }: {
 
             const hasAnything = completedCount > 0 || totalMin > 0 || questions.length > 0 || missedTasks.length > 0
             if (!hasAnything) {
+              // Geçmiş günler için "programa dahil değil" yazmak yanıltıcı:
+              // eski program günü olabilir, sadece o gün hiç aktivite olmamış olabilir.
+              // "Programa dahil değil" mesajı yalnızca gelecek + mevcut plan
+              // dışındaki günler için anlamlı.
               return (
                 <p className="text-base px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg)', color: 'var(--text-hint)' }}>
-                  {inPlan ? 'Bu gün için henüz kayıt yok.' : '📭 Bu gün programa dahil değil.'}
+                  Bu güne ait kayıt bulunamadı.
                 </p>
               )
             }
@@ -504,6 +536,11 @@ function StatCard({ label, value, sub, icon, color }: {
 
 export default function GelisimimPage() {
   const [filter, setFilter] = useState<'all' | 'today'>('today')
+  // "all" modunda kapsam: 'current' = sadece mevcut program penceresi,
+  // 'total' = tüm kullanım süresi. Kullanıcı yeni program oluşturduysa
+  // her "Tüm Zamanlar" tıklamasında seçim kutucuğu açılır.
+  const [allScope, setAllScope] = useState<'current' | 'total'>('total')
+  const [showAllScopePicker, setShowAllScopePicker] = useState(false)
   const [stats, setStats] = useState<GelisimimStats | null>(null)
   const [xp, setXp] = useState<XpInfo | null>(null)
   const [dist, setDist] = useState<LessonDistribution[]>([])
@@ -524,6 +561,60 @@ export default function GelisimimPage() {
     const uid = getUserId()
     return uid ? getOnboardingData(uid) : null
   }, [])
+
+  // Kullanıcı en az 1 kez "Yeni Program Oluştur" akışını kullandıysa
+  // Tüm Zamanlar görünümü haftalık (collapsible) gruplama moduna geçer.
+  const weeklyHistoryEnabled = useMemo(() => {
+    const uid = getUserId()
+    if (!uid) return false
+    const raw = localStorage.getItem(`user_${uid}_weekly_history_enabled`)
+    if (!raw) return false
+    try { return JSON.parse(raw) === true } catch { return false }
+  }, [])
+
+  // Mevcut planın başlangıç tarihi → haftalık dilimlerin referansı.
+  // plan[0].date'i pencere kökü kabul edip 7'şer 7'şer geriye doğru bölersek
+  // tüm geçmiş aktiviteleri haftalara dağıtabiliriz.
+  const planStart = useMemo(() => {
+    if (plan.length === 0) return null
+    const d = new Date(plan[0].date)
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  }, [plan])
+
+  const planEnd = useMemo(() => {
+    if (plan.length === 0) return null
+    const d = new Date(plan[plan.length - 1].date)
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  }, [plan])
+
+  const planStartStr = planStart ? ymd(planStart) : null
+  const planEndStr = planEnd ? ymd(planEnd) : null
+
+  function isWithinCurrentPlan(dateStr: string): boolean {
+    if (!planStartStr || !planEndStr) return true
+    return dateStr >= planStartStr && dateStr <= planEndStr
+  }
+
+  function weekStartForDate(dateStr: string): string {
+    if (!planStart) return dateStr
+    const d = new Date(dateStr)
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    const diffDays = Math.floor((day.getTime() - planStart.getTime()) / 86400000)
+    // Mevcut hafta: diffDays ∈ [0..6] → 0; önceki hafta: [-7..-1] → -1; vs.
+    const weekIndex = Math.floor(diffDays / 7)
+    const weekStart = new Date(planStart)
+    weekStart.setDate(weekStart.getDate() + weekIndex * 7)
+    return ymd(weekStart)
+  }
+
+  function weekRangeLabel(weekStartStr: string): string {
+    const s = new Date(weekStartStr)
+    const e = new Date(s)
+    e.setDate(e.getDate() + 6)
+    const fmt = (d: Date) =>
+      d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
+    return `${fmt(s)} – ${fmt(e)}`
+  }
 
   function load() {
     setLoading(true)
@@ -633,6 +724,7 @@ export default function GelisimimPage() {
   const localXpBoost = localCompleted * 10
 
   // Tüm zamanlar: geçmiş günlerdeki tamamlanan görevleri tara (mobildeki localAllTimeStats)
+  // currentOnly true ise sadece mevcut program penceresindeki günler sayılır.
   const allTimeLocal = useMemo(() => {
     // Plan + manuel görev sürelerini id → dk olarak map'le
     const durations: Record<string, number> = {}
@@ -642,21 +734,35 @@ export default function GelisimimPage() {
     manualTasks.forEach((t) => { durations[t.id] = t.durationMinutes })
 
     const allDays = getAllCompletedTaskDays()
-    let totalCompleted = 0
-    let totalMinutes = 0
-    for (const [date, ids] of Object.entries(allDays)) {
-      if (date === todayStr) continue // bugün ayrıca eklenir
-      for (const id of ids) {
-        if (id.startsWith('m_') && !durations[id]) continue // mola id'si — atla
-        totalCompleted += 1
-        // Bilinmiyorsa: s_=güçlü ~30dk, w_=zayıf ~60dk, manuel ~60dk
-        totalMinutes += durations[id] ?? (id.startsWith('s_') ? 30 : 60)
+    const counters = (predicate: (date: string) => boolean) => {
+      let totalCompleted = 0
+      let totalMinutes = 0
+      for (const [date, ids] of Object.entries(allDays)) {
+        if (date === todayStr) continue // bugün ayrıca eklenir
+        if (!predicate(date)) continue
+        for (const id of ids) {
+          if (id.startsWith('m_') && !durations[id]) continue
+          totalCompleted += 1
+          totalMinutes += durations[id] ?? (id.startsWith('s_') ? 30 : 60)
+        }
       }
+      return { totalCompleted, totalMinutes }
     }
-    return { totalCompleted, totalMinutes }
-  }, [plan, manualTasks, todayStr])
+    return {
+      total: counters(() => true),
+      currentOnly: counters((d) => isWithinCurrentPlan(d)),
+    }
+  }, [plan, manualTasks, todayStr, planStartStr, planEndStr])
 
-  // Birleşik istatistikler — mobildeki merge mantığı
+  // Sadece mevcut program penceresindeki soru toplamı (questionsByDay zaten
+  // yalnızca aktif günleri içerir → tarihe göre filtreleriz).
+  const questionsCurrentOnly = useMemo(() => {
+    return questionsByDay
+      .filter((r) => isWithinCurrentPlan(r.date))
+      .reduce((s, r) => s + r.questions.reduce((q, qq) => q + qq.count, 0), 0)
+  }, [questionsByDay, planStartStr, planEndStr])
+
+  // Birleşik istatistikler — mobildeki merge mantığı + mevcut program kapsamı.
   const mergedStats: GelisimimStats = useMemo(() => {
     const base = stats ?? { completedTasks: 0, totalMinutes: 0, totalQuestions: 0, restDays: 0 }
     if (filter === 'today') {
@@ -667,13 +773,28 @@ export default function GelisimimPage() {
         restDays: restDays.includes(todayStr) ? 1 : 0,
       }
     }
+    const useCurrentScope = weeklyHistoryEnabled && allScope === 'current'
+    if (useCurrentScope) {
+      // Mevcut program penceresi: backend stats yerine local kayıtları topla.
+      // Bugün ayrıca eklenir; allTimeLocal.currentOnly geçmiş günleri kapsar.
+      const todayInWindow = isWithinCurrentPlan(todayStr)
+      return {
+        completedTasks:
+          allTimeLocal.currentOnly.totalCompleted + (todayInWindow ? localCompleted : 0),
+        totalMinutes:
+          allTimeLocal.currentOnly.totalMinutes + (todayInWindow ? localMinutes : 0),
+        totalQuestions: questionsCurrentOnly,
+        restDays: restDays.filter((d) => isWithinCurrentPlan(d)).length,
+      }
+    }
     return {
-      completedTasks: base.completedTasks + localCompleted + allTimeLocal.totalCompleted,
-      totalMinutes: base.totalMinutes + localMinutes + allTimeLocal.totalMinutes,
+      completedTasks: base.completedTasks + localCompleted + allTimeLocal.total.totalCompleted,
+      totalMinutes: base.totalMinutes + localMinutes + allTimeLocal.total.totalMinutes,
       totalQuestions: base.totalQuestions,
       restDays: base.restDays + restDays.length,
     }
-  }, [stats, filter, localCompleted, localMinutes, allTimeLocal, restDays, todayStr])
+  }, [stats, filter, allScope, weeklyHistoryEnabled, localCompleted, localMinutes,
+      allTimeLocal, questionsCurrentOnly, restDays, todayStr, planStartStr, planEndStr])
 
   const effectiveXp = xp ? applyXpBoost(xp, localXpBoost) : null
   const xpFraction = effectiveXp ? xpProgressFraction(effectiveXp) : 0
@@ -804,11 +925,29 @@ export default function GelisimimPage() {
           <div className="flex gap-1 p-1.5 rounded-2xl" style={{ background: 'var(--bg)' }}>
             {([
               { v: 'today' as const, label: 'Bugün' },
-              { v: 'all' as const, label: 'Tüm Zamanlar' },
+              {
+                v: 'all' as const,
+                label: filter === 'all' && weeklyHistoryEnabled
+                  ? (allScope === 'current' ? 'Tüm Zamanlar · Mevcut Program' : 'Tüm Zamanlar · Hepsi')
+                  : 'Tüm Zamanlar',
+              },
             ]).map((b) => (
               <button
                 key={b.v}
-                onClick={() => setFilter(b.v)}
+                onClick={() => {
+                  if (b.v === 'all') {
+                    // Kullanıcı yeni program oluşturduysa kapsam seçimi sun;
+                    // değilse direkt "total" davranışı.
+                    if (weeklyHistoryEnabled) {
+                      setShowAllScopePicker(true)
+                    } else {
+                      setAllScope('total')
+                      setFilter('all')
+                    }
+                  } else {
+                    setFilter(b.v)
+                  }
+                }}
                 className="flex-1 py-3 rounded-xl text-base font-bold transition-all"
                 style={{
                   background: filter === b.v ? 'var(--primary)' : 'var(--card)',
@@ -857,28 +996,60 @@ export default function GelisimimPage() {
                 if (filter === 'today') {
                   return <div className="space-y-3">{days[0][1].map(lessonRow)}</div>
                 }
-                // Tüm Zamanlar → her gün için tarih başlığı + araya boşluk
+                // Tüm Zamanlar → haftalık (collapsible) ya da düz günlük gösterim
+                const renderDay = (date: string, list: CompletedLessonRecord[]) => (
+                  <div key={date}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span
+                        className="px-3 py-1 rounded-lg text-sm font-bold"
+                        style={{ background: '#EEF2FF', color: 'var(--primary)' }}
+                      >
+                        {date === todayStr
+                          ? 'Bugün'
+                          : new Date(date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })}
+                      </span>
+                      <span className="text-sm" style={{ color: 'var(--text-hint)' }}>{list.length} ders</span>
+                    </div>
+                    <div className="space-y-3">{list.map(lessonRow)}</div>
+                  </div>
+                )
+
+                if (!weeklyHistoryEnabled || !planStart) {
+                  return (
+                    <div className="space-y-6">
+                      {days.map(([date, list]) => renderDay(date, list))}
+                    </div>
+                  )
+                }
+
+                // Haftalık gruplama
+                const buckets = new Map<string, [string, CompletedLessonRecord[]][]>()
+                for (const [date, list] of days) {
+                  const wk = weekStartForDate(date)
+                  if (!buckets.has(wk)) buckets.set(wk, [])
+                  buckets.get(wk)!.push([date, list])
+                }
+                const currentWeek = ymd(planStart)
+                const weekEntries = Array.from(buckets.entries())
+                  .sort((a, b) => b[0].localeCompare(a[0])) // yeni hafta üstte
                 return (
-                  <div className="space-y-6">
-                    {days.map(([date, list], idx) => (
-                      <div key={date}>
-                        <div
-                          className="flex items-center gap-2 mb-3 pb-2"
-                          style={{ borderBottom: idx === 0 ? 'none' : undefined }}
+                  <div className="space-y-3">
+                    {weekEntries.map(([wkStart, daysInWeek]) => {
+                      const totalLessons = daysInWeek.reduce((s, [, l]) => s + l.length, 0)
+                      const isCurrent = wkStart === currentWeek
+                      return (
+                        <WeekAccordion
+                          key={`lw-${wkStart}`}
+                          title={isCurrent ? 'Bu Hafta' : weekRangeLabel(wkStart)}
+                          subtitle={`${totalLessons} ders`}
+                          defaultOpen={isCurrent}
                         >
-                          <span
-                            className="px-3 py-1 rounded-lg text-sm font-bold"
-                            style={{ background: '#EEF2FF', color: 'var(--primary)' }}
-                          >
-                            {date === todayStr
-                              ? 'Bugün'
-                              : new Date(date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })}
-                          </span>
-                          <span className="text-sm" style={{ color: 'var(--text-hint)' }}>{list.length} ders</span>
-                        </div>
-                        <div className="space-y-3">{list.map(lessonRow)}</div>
-                      </div>
-                    ))}
+                          <div className="space-y-6">
+                            {daysInWeek.map(([date, list]) => renderDay(date, list))}
+                          </div>
+                        </WeekAccordion>
+                      )
+                    })}
                   </div>
                 )
               })()}
@@ -928,24 +1099,62 @@ export default function GelisimimPage() {
                     </div>
                   )
                 }
+                const renderQDay = (date: string, questions: DailyReport['questions']) => {
+                  const sorted = [...questions].sort((a, b) => b.count - a.count)
+                  const max = sorted[0]?.count || 1
+                  const total = sorted.reduce((s, q) => s + q.count, 0)
+                  return (
+                    <div key={date}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="px-3 py-1 rounded-lg text-sm font-bold" style={{ background: '#EEF2FF', color: 'var(--primary)' }}>
+                          {date === todayStr
+                            ? 'Bugün'
+                            : new Date(date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })}
+                        </span>
+                        <span className="text-sm" style={{ color: 'var(--text-hint)' }}>{total} soru</span>
+                      </div>
+                      <div className="space-y-4">{sorted.map((q) => qRow(q.subjectName, q.count, max))}</div>
+                    </div>
+                  )
+                }
+
+                if (!weeklyHistoryEnabled || !planStart) {
+                  return (
+                    <div className="space-y-6">
+                      {questionsByDay.map(({ date, questions }) => renderQDay(date, questions))}
+                    </div>
+                  )
+                }
+
+                // Haftalık gruplama
+                const buckets = new Map<string, { date: string; questions: DailyReport['questions'] }[]>()
+                for (const r of questionsByDay) {
+                  const wk = weekStartForDate(r.date)
+                  if (!buckets.has(wk)) buckets.set(wk, [])
+                  buckets.get(wk)!.push(r)
+                }
+                const currentWeek = ymd(planStart)
+                const weekEntries = Array.from(buckets.entries())
+                  .sort((a, b) => b[0].localeCompare(a[0]))
                 return (
-                  <div className="space-y-6">
-                    {questionsByDay.map(({ date, questions }) => {
-                      const sorted = [...questions].sort((a, b) => b.count - a.count)
-                      const max = sorted[0]?.count || 1
-                      const total = sorted.reduce((s, q) => s + q.count, 0)
+                  <div className="space-y-3">
+                    {weekEntries.map(([wkStart, daysInWeek]) => {
+                      const totalQ = daysInWeek.reduce(
+                        (s, r) => s + r.questions.reduce((q, qq) => q + qq.count, 0),
+                        0,
+                      )
+                      const isCurrent = wkStart === currentWeek
                       return (
-                        <div key={date}>
-                          <div className="flex items-center gap-2 mb-3">
-                            <span className="px-3 py-1 rounded-lg text-sm font-bold" style={{ background: '#EEF2FF', color: 'var(--primary)' }}>
-                              {date === todayStr
-                                ? 'Bugün'
-                                : new Date(date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })}
-                            </span>
-                            <span className="text-sm" style={{ color: 'var(--text-hint)' }}>{total} soru</span>
+                        <WeekAccordion
+                          key={`qw-${wkStart}`}
+                          title={isCurrent ? 'Bu Hafta' : weekRangeLabel(wkStart)}
+                          subtitle={`${totalQ} soru`}
+                          defaultOpen={isCurrent}
+                        >
+                          <div className="space-y-6">
+                            {daysInWeek.map(({ date, questions }) => renderQDay(date, questions))}
                           </div>
-                          <div className="space-y-4">{sorted.map((q) => qRow(q.subjectName, q.count, max))}</div>
-                        </div>
+                        </WeekAccordion>
                       )
                     })}
                   </div>
@@ -956,6 +1165,58 @@ export default function GelisimimPage() {
         </div>
       </div>
 
+      {showAllScopePicker && (
+        <ModalShell
+          title="Hangi Aralıkta Göstereyim?"
+          subtitle="Mevcut programın istatistikleri ile başlangıçtan bu yana toplamı arasında seç."
+          onClose={() => setShowAllScopePicker(false)}
+        >
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                setAllScope('current')
+                setFilter('all')
+                setShowAllScopePicker(false)
+              }}
+              className="w-full text-left p-5 rounded-2xl transition-all hover:opacity-90"
+              style={{ background: 'var(--bg)', border: '2px solid var(--primary)' }}
+            >
+              <div className="flex items-start gap-3">
+                <span className="text-3xl">📅</span>
+                <div>
+                  <p className="text-lg font-extrabold" style={{ color: 'var(--primary)' }}>
+                    Mevcut Program İstatistikleri
+                  </p>
+                  <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Sadece şu anki 7 günlük programının kayıtları.
+                  </p>
+                </div>
+              </div>
+            </button>
+            <button
+              onClick={() => {
+                setAllScope('total')
+                setFilter('all')
+                setShowAllScopePicker(false)
+              }}
+              className="w-full text-left p-5 rounded-2xl transition-all hover:opacity-90"
+              style={{ background: 'var(--bg)', border: '2px solid var(--border)' }}
+            >
+              <div className="flex items-start gap-3">
+                <span className="text-3xl">🌐</span>
+                <div>
+                  <p className="text-lg font-extrabold" style={{ color: 'var(--text-primary)' }}>
+                    Bütün Zamanların İstatistikleri
+                  </p>
+                  <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Uygulamayı kullanmaya başladığından bu yana toplam.
+                  </p>
+                </div>
+              </div>
+            </button>
+          </div>
+        </ModalShell>
+      )}
       {showSoru && (
         <SoruGelisimiModal
           subjects={questionSubjects}
