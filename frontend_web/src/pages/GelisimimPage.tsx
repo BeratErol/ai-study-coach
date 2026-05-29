@@ -721,7 +721,6 @@ export default function GelisimimPage() {
   // Lokal bugün istatistikleri (mobildeki localTodayStatsProvider)
   const localCompleted = completedLessons.length
   const localMinutes = completedLessons.reduce((s, t) => s + t.durationMinutes, 0)
-  const localXpBoost = localCompleted * 10
 
   // Tüm zamanlar: geçmiş günlerdeki tamamlanan görevleri tara (mobildeki localAllTimeStats)
   // currentOnly true ise sadece mevcut program penceresindeki günler sayılır.
@@ -753,6 +752,11 @@ export default function GelisimimPage() {
       currentOnly: counters((d) => isWithinCurrentPlan(d)),
     }
   }, [plan, manualTasks, todayStr, planStartStr, planEndStr])
+
+  // XP boost: bugün + geçmiş günlerde tamamlanan dersler (her biri 10 XP).
+  // Backend XP'si yalnızca soru/oturum kaydı olan hesaplarda dolu; sadece ders
+  // tamamlayan hesaplarda geçmiş tamamlamalar da XP'ye buradan eklenir.
+  const localXpBoost = (localCompleted + allTimeLocal.total.totalCompleted) * 10
 
   // Sadece mevcut program penceresindeki soru toplamı (questionsByDay zaten
   // yalnızca aktif günleri içerir → tarihe göre filtreleriz).
@@ -799,15 +803,35 @@ export default function GelisimimPage() {
   const effectiveXp = xp ? applyXpBoost(xp, localXpBoost) : null
   const xpFraction = effectiveXp ? xpProgressFraction(effectiveXp) : 0
 
-  // Streak: bugün herhangi bir aktivite varsa (soru çözümü VEYA tamamlanan ders)
-  // bugünü aktif say. Backend zaten soru/oturum varsa bugünü streak'e ekliyor;
-  // tamamlanan ders local olduğu için biz burada güncelliyoruz.
+  // Streak: bir gün "çalışma günü" sayılır eğer o gün plan oturumu tamamlanmışsa
+  // (w_ = zayıf, s_ = güçlü blok) VEYA soru çözülmüşse. Manuel görevler (manual-)
+  // ve molalar (m_) çalışma sayılmaz — streak'i tetiklemez. Günler ardışık
+  // olmalı; boşluk olunca seri kırılır.
   const effectiveStreak = useMemo(() => {
-    if (!xp) return 0
-    const backendCountsToday = xp.streakDays > xp.streakBeforeToday
-    const todayActive = backendCountsToday || localCompleted > 0
-    return todayActive ? xp.streakBeforeToday + 1 : 0
-  }, [xp, localCompleted])
+    const isStudyId = (id: string) => id.startsWith('w_') || id.startsWith('s_')
+    const activeDays = new Set<string>()
+    // Client: gerçek plan oturumu tamamlanan günler
+    for (const [date, ids] of Object.entries(getAllCompletedTaskDays())) {
+      if ([...ids].some(isStudyId)) activeDays.add(date)
+    }
+    // Client: soru çözülen günler (Tüm Zamanlar görünümünden gelir)
+    for (const r of questionsByDay) {
+      if (r.questions.some((q) => q.count > 0)) activeDays.add(r.date)
+    }
+    // Backend ardışık serisinden az olmasın (soru/oturum kaydı olan hesaplar).
+    const backendStreak = xp?.streakDays ?? 0
+
+    // Bugünden geriye ardışık say.
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    let count = 0
+    const cursor = new Date(start)
+    while (activeDays.has(ymd(cursor))) {
+      count++
+      cursor.setDate(cursor.getDate() - 1)
+    }
+    return Math.max(count, backendStreak)
+  }, [xp, completedIds, questionsByDay, todayStr])
 
   // Soru gelişimi için ders havuzu
   const questionSubjects = useMemo(() => {
@@ -965,10 +989,14 @@ export default function GelisimimPage() {
             <h2 className="text-2xl font-extrabold mb-3" style={{ color: 'var(--text-primary)' }}>Ders Dağılımı</h2>
             <div className="rounded-2xl p-6" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
               {(() => {
-                // Bugün filtresi → sadece bugünün dersleri; Tüm Zamanlar → günlere göre gruplu
+                // Bugün filtresi → sadece bugünün dersleri; Tüm Zamanlar → günlere göre gruplu.
+                // "Mevcut Program" kapsamında yalnızca plan penceresine düşen günler.
+                const useCurrentScope = weeklyHistoryEnabled && allScope === 'current'
                 const days = filter === 'today'
                   ? lessonsByDay.filter(([d]) => d === todayStr)
-                  : lessonsByDay
+                  : useCurrentScope
+                    ? lessonsByDay.filter(([d]) => isWithinCurrentPlan(d))
+                    : lessonsByDay
                 if (days.length === 0) {
                   return (
                     <div className="text-center py-6">
@@ -1014,7 +1042,9 @@ export default function GelisimimPage() {
                   </div>
                 )
 
-                if (!weeklyHistoryEnabled || !planStart) {
+                // Haftalık gruplama yalnızca "Bütün Zamanlar" kapsamında.
+                // Mevcut Program kapsamında düz günlük gösterilir.
+                if (!weeklyHistoryEnabled || !planStart || useCurrentScope) {
                   return (
                     <div className="space-y-6">
                       {days.map(([date, list]) => renderDay(date, list))}
@@ -1089,8 +1119,13 @@ export default function GelisimimPage() {
                   return <div className="space-y-4">{dist.map((i) => qRow(i.lessonName, i.totalQuestions, max))}</div>
                 }
 
-                // Tüm Zamanlar → tarihe göre gruplu günlük soru dağılımı
-                if (questionsByDay.length === 0) {
+                // Tüm Zamanlar → tarihe göre gruplu günlük soru dağılımı.
+                // "Mevcut Program" kapsamında yalnızca plan penceresine düşen günler.
+                const useCurrentScope = weeklyHistoryEnabled && allScope === 'current'
+                const qDays = useCurrentScope
+                  ? questionsByDay.filter((r) => isWithinCurrentPlan(r.date))
+                  : questionsByDay
+                if (qDays.length === 0) {
                   return (
                     <div className="text-center py-6">
                       <p className="text-5xl mb-2">📊</p>
@@ -1118,17 +1153,17 @@ export default function GelisimimPage() {
                   )
                 }
 
-                if (!weeklyHistoryEnabled || !planStart) {
+                if (!weeklyHistoryEnabled || !planStart || useCurrentScope) {
                   return (
                     <div className="space-y-6">
-                      {questionsByDay.map(({ date, questions }) => renderQDay(date, questions))}
+                      {qDays.map(({ date, questions }) => renderQDay(date, questions))}
                     </div>
                   )
                 }
 
                 // Haftalık gruplama
                 const buckets = new Map<string, { date: string; questions: DailyReport['questions'] }[]>()
-                for (const r of questionsByDay) {
+                for (const r of qDays) {
                   const wk = weekStartForDate(r.date)
                   if (!buckets.has(wk)) buckets.set(wk, [])
                   buckets.get(wk)!.push(r)

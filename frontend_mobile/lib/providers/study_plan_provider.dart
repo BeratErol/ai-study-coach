@@ -10,6 +10,7 @@ import '../services/app_state_service.dart';
 import '../services/study_plan_generator.dart';
 import '../services/token_service.dart';
 import '../services/user_prefs_service.dart';
+import 'gelisimim_provider.dart';
 
 bool _isSameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
@@ -86,6 +87,7 @@ Future<void> regenerateStudyPlan(
   ref.invalidate(studyPlanProvider);
   ref.invalidate(todayTasksProvider);
   ref.invalidate(onboardingDataProvider);
+  ref.invalidate(weeklyHistoryEnabledProvider);
 }
 
 final studyPlanProvider = FutureProvider<List<StudyDay>>((ref) async {
@@ -137,6 +139,60 @@ int? _daysUntil(DateTime examDate) {
   final diff = exam.difference(today).inDays;
   return diff > 0 ? diff : null;
 }
+
+/// Sınav tarihinin bugüne göre durumu.
+enum ExamPhase { upcoming, today, past, none }
+
+class ExamStatus {
+  final ExamPhase phase;
+  final int daysLeft; // yalnızca upcoming için anlamlı
+  const ExamStatus(this.phase, [this.daysLeft = 0]);
+}
+
+ExamStatus _examStatusFromDate(DateTime examDate) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final exam = DateTime(examDate.year, examDate.month, examDate.day);
+  final diff = exam.difference(today).inDays;
+  if (diff > 0) return ExamStatus(ExamPhase.upcoming, diff);
+  if (diff == 0) return const ExamStatus(ExamPhase.today);
+  return const ExamStatus(ExamPhase.past);
+}
+
+/// Sınav tarihini (geçmişse) sıfırlar: local cache + AppState + backend.
+Future<void> _clearExamDate(String userId) async {
+  final dataMap = await UserPrefsService.getOnboardingData(userId);
+  if (dataMap == null) return;
+  if ((dataMap['examDate'] as String?)?.isEmpty ?? true) return;
+  dataMap['examDate'] = null;
+  // saveOnboardingData içeride AppState'e de push eder.
+  await UserPrefsService.saveOnboardingData(userId, dataMap);
+  try {
+    await ApiService().dio.post('/UserProfile', data: dataMap);
+  } catch (_) {}
+}
+
+/// Dashboard için sınav durumu. Tek doğruluk kaynağı `onboarding_data.examDate`
+/// — bu anahtar AppState ile senkronlu olduğundan web'de profilden yapılan
+/// değişiklik hydrate sonrası buraya yansır. (Eski `sinav_tarihi` anahtarı stale
+/// kalabildiği için artık kullanılmıyor.) Tarih geçmişse otomatik sıfırlar.
+final examStatusProvider = FutureProvider<ExamStatus>((ref) async {
+  final userId = await TokenService.getUserId();
+  if (userId == null) return const ExamStatus(ExamPhase.none);
+
+  final dataMap = await UserPrefsService.getOnboardingData(userId);
+  final s = dataMap?['examDate'] as String?;
+  if (s == null || s.isEmpty) return const ExamStatus(ExamPhase.none);
+  final examDate = DateTime.tryParse(s);
+  if (examDate == null) return const ExamStatus(ExamPhase.none);
+
+  final status = _examStatusFromDate(examDate);
+  if (status.phase == ExamPhase.past) {
+    await _clearExamDate(userId);
+    return const ExamStatus(ExamPhase.none);
+  }
+  return status;
+});
 
 final examCountdownProvider = FutureProvider<int?>((ref) async {
   final userId = await TokenService.getUserId();

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/gelisimim_service.dart';
 import '../../services/token_service.dart';
 import '../../models/study_plan.dart';
+import '../../providers/gelisimim_provider.dart';
 
 class GunlukRaporSheet extends ConsumerStatefulWidget {
   final String date; // "yyyy-MM-dd"
@@ -70,10 +71,26 @@ class _GunlukRaporSheetState extends ConsumerState<GunlukRaporSheet> {
       } catch (_) {}
     }
 
+    // Tamamlanan ders detayları (web getCompletedLessons karşılığı).
+    // Yeni program oluştuktan sonra eski plan günleri artık plan'da olmadığı
+    // için dayBlocks boş kalır; bu detay kaydı sayesinde o günün tamamlanmış
+    // dersleri yine gösterilebilir.
+    final lessonsKey = 'user_${userId}_completed_lessons_${widget.date}';
+    List<CompletedLessonRecord> completedLessons = [];
+    final lessonsRaw = prefs.getString(lessonsKey);
+    if (lessonsRaw != null) {
+      try {
+        completedLessons = (jsonDecode(lessonsRaw) as List)
+            .map((e) => CompletedLessonRecord.fromJson(e as Map<String, dynamic>))
+            .toList();
+      } catch (_) {}
+    }
+
     return _DayData(
       report: report,
       completedIds: completedIds,
       dayBlocks: dayBlocks,
+      completedLessons: completedLessons,
     );
   }
 
@@ -132,10 +149,14 @@ class _GunlukRaporSheetState extends ConsumerState<GunlukRaporSheet> {
                   final report = data?.report;
                   final completedIds = data?.completedIds ?? {};
                   final dayBlocks = data?.dayBlocks ?? [];
+                  final completedLessons = data?.completedLessons ?? [];
 
                   final hasQuestions = report != null && report.questions.isNotEmpty;
                   final hasSessions = dayBlocks.isNotEmpty;
-                  final hasAnything = hasQuestions || hasSessions;
+                  // Plan bloğu yoksa (yeni program → eski gün) ama tamamlanan
+                  // ders detayı varsa onları göster.
+                  final hasLessonsOnly = !hasSessions && completedLessons.isNotEmpty;
+                  final hasAnything = hasQuestions || hasSessions || hasLessonsOnly;
 
                   if (!hasAnything) {
                     return const _EmptyState(
@@ -152,6 +173,9 @@ class _GunlukRaporSheetState extends ConsumerState<GunlukRaporSheet> {
                           blocks: dayBlocks,
                           completedIds: completedIds,
                         ),
+                        if (hasQuestions || hasLessonsOnly) const SizedBox(height: 20),
+                      ] else if (hasLessonsOnly) ...[
+                        _CompletedLessonsSection(lessons: completedLessons),
                         if (hasQuestions) const SizedBox(height: 20),
                       ],
                       if (hasQuestions)
@@ -182,11 +206,13 @@ class _DayData {
   final DailyReport? report;
   final Set<String> completedIds;
   final List<StudyBlock> dayBlocks;
+  final List<CompletedLessonRecord> completedLessons;
 
   const _DayData({
     required this.report,
     required this.completedIds,
     required this.dayBlocks,
+    required this.completedLessons,
   });
 }
 
@@ -287,6 +313,95 @@ class _SessionSection extends StatelessWidget {
   String _fmtMin(int m) {
     if (m < 60) return '${m}dk';
     return '${m ~/ 60}s ${m % 60}dk';
+  }
+}
+
+// Plan bloğu kalmamış eski günler için: tamamlanan ders detaylarını listeler.
+class _CompletedLessonsSection extends StatelessWidget {
+  final List<CompletedLessonRecord> lessons;
+  const _CompletedLessonsSection({required this.lessons});
+
+  String _taskLabel(String type) {
+    switch (type) {
+      case 'konu_anlatimi': return 'Konu Anlatımı';
+      case 'soru_cozumu': return 'Soru Çözümü';
+      case 'deneme': return 'Deneme Sınavı';
+      case 'tekrar': return 'Tekrar';
+      default: return type;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalMins = lessons.fold<int>(0, (s, l) => s + l.durationMinutes);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text('✅', style: TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            const Text('Tamamlanan Dersler',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEF2FF),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${lessons.length} ders · ${totalMins ~/ 60}s ${totalMins % 60}dk',
+                style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF4F46E5),
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ...lessons.map((l) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l.emoji, style: const TextStyle(fontSize: 18)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l.topicName != null
+                              ? '${l.subjectName} — ${l.topicName}'
+                              : l.subjectName,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
+                        Text(_taskLabel(l.taskType),
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey.shade500)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('${l.durationMinutes} dk',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey.shade600)),
+                      const SizedBox(height: 2),
+                      const Icon(Icons.check_circle_rounded,
+                          color: Colors.green, size: 18),
+                    ],
+                  ),
+                ],
+              ),
+            )),
+      ],
+    );
   }
 }
 

@@ -175,6 +175,44 @@ class CompletedLessonRecord {
       );
 }
 
+/// Streak için "çalışma günü" set'i: o gün PLAN OTURUMU tamamlanmış (w_ = zayıf,
+/// s_ = güçlü blok) günler. Manuel görevler (manual-) ve molalar (m_) çalışma
+/// sayılmaz → streak'i tetiklemez. Backend soru/oturum günleri XpInfo.streakDays
+/// ile ayrıca harmanlanır.
+final streakActiveDaysProvider = FutureProvider<Set<String>>((ref) async {
+  final userId = await TokenService.getUserId();
+  if (userId == null) return <String>{};
+  final prefs = await SharedPreferences.getInstance();
+  final newPrefix = 'user_${userId}_completed_tasks_';
+  final oldPrefix = 'completed_tasks_${userId}_';
+  final days = <String>{};
+  for (final key in prefs.getKeys()) {
+    String? date;
+    if (key.startsWith(newPrefix)) {
+      date = key.substring(newPrefix.length);
+    } else if (key.startsWith(oldPrefix)) {
+      date = key.substring(oldPrefix.length);
+    }
+    if (date == null) continue;
+    final raw = prefs.getString(key);
+    List<String> ids;
+    if (raw != null) {
+      try {
+        ids = (jsonDecode(raw) as List).cast<String>();
+      } catch (_) {
+        ids = [];
+      }
+    } else {
+      ids = prefs.getStringList(key) ?? [];
+    }
+    // Yalnızca plan oturumu (w_/s_) çalışma sayılır.
+    if (ids.any((id) => id.startsWith('w_') || id.startsWith('s_'))) {
+      days.add(date);
+    }
+  }
+  return days;
+});
+
 final completedLessonsByDayProvider =
     FutureProvider<List<CompletedLessonByDay>>((ref) async {
   final userId = await TokenService.getUserId();

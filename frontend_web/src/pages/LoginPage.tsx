@@ -106,7 +106,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#F8F7FF' }}>
+    <div className="min-h-screen flex flex-col bg-[#F8F7FF] dark:bg-[#0F0F1A]">
       <div
         className="flex flex-col items-center justify-center gap-6 shrink-0"
         style={{
@@ -122,48 +122,48 @@ export default function LoginPage() {
       </div>
 
       <div className="flex-1 flex items-start justify-center px-4 pt-10 pb-16">
-        <div className="w-full max-w-xl bg-white rounded-3xl shadow-xl border border-gray-100 px-12 pt-14 pb-12">
-          <h2 className="text-4xl font-extrabold text-gray-900">Giriş Yap</h2>
-          <p className="text-gray-500 text-lg mt-2 mb-7">Hesabınla devam et</p>
+        <div className="w-full max-w-xl bg-white dark:bg-[#1A1A2E] rounded-3xl shadow-xl border border-gray-100 dark:border-[#2D2D44] px-12 pt-14 pb-12">
+          <h2 className="text-4xl font-extrabold text-gray-900 dark:text-slate-100">Giriş Yap</h2>
+          <p className="text-gray-500 dark:text-slate-400 text-lg mt-2 mb-7">Hesabınla devam et</p>
 
           {successMessage && (
-            <div className="mb-8 px-6 py-5 bg-green-50 border border-green-200 rounded-xl text-green-700 text-base font-medium">
+            <div className="mb-8 px-6 py-5 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 rounded-xl text-green-700 dark:text-green-400 text-base font-medium">
               ✓ {successMessage}
             </div>
           )}
 
           {error && (
-            <div className="mb-8 px-6 py-5 bg-red-50 border border-red-200 rounded-xl text-red-600 text-base">
+            <div className="mb-8 px-6 py-5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-base">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-lg font-semibold text-gray-700 mb-2">E-posta</label>
+              <label className="block text-lg font-semibold text-gray-700 dark:text-slate-300 mb-2">E-posta</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="ornek@email.com"
-                className="w-full h-16 border-2 border-gray-200 rounded-xl px-6 text-lg focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50 outline-none transition-all"
+                className="w-full h-16 border-2 border-gray-200 dark:border-[#2D2D44] bg-white dark:bg-[#13131F] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 rounded-xl px-6 text-lg focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-500/20 outline-none transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-lg font-semibold text-gray-700 mb-2">Şifre</label>
+              <label className="block text-lg font-semibold text-gray-700 dark:text-slate-300 mb-2">Şifre</label>
               <div className="relative">
                 <input
                   type={showPass ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full h-16 border-2 border-gray-200 rounded-xl px-6 pr-16 text-lg focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50 outline-none transition-all"
+                  className="w-full h-16 border-2 border-gray-200 dark:border-[#2D2D44] bg-white dark:bg-[#13131F] text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 rounded-xl px-6 pr-16 text-lg focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50 dark:focus:ring-indigo-500/20 outline-none transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 text-xl"
+                  className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 p-1 text-xl"
                 >
                   {showPass ? '🙈' : '👁️'}
                 </button>
@@ -179,9 +179,9 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-lg text-gray-500 mt-10">
+          <p className="text-center text-lg text-gray-500 dark:text-slate-400 mt-10">
             Hesabın yok mu?{' '}
-            <Link to="/register" className="text-indigo-600 font-semibold hover:text-indigo-700">
+            <Link to="/register" className="text-indigo-600 dark:text-indigo-400 font-semibold hover:text-indigo-700">
               Kayıt Ol
             </Link>
           </p>

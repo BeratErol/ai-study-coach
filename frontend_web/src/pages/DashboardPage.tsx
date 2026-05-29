@@ -19,6 +19,7 @@ import { getTopicsForSubject } from '../data/subjectTopics'
 import { getOnboardingData, getExamGoal } from '../services/userPrefsService'
 import { getUserId } from '../services/tokenService'
 import type { OnboardingData } from '../models/OnboardingData'
+import api from '../services/api'
 
 // ─── Yardımcılar ──────────────────────────────────────────────────────────────
 
@@ -26,14 +27,22 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function daysUntil(dateStr: string | null | undefined): number | null {
+// Sınav tarihinin bugüne göre durumu:
+//  - sayı > 0  → kalan gün
+//  - 'today'   → sınav bugün (kutlama mesajı göster)
+//  - 'past'    → sınav geçti (tarihi sıfırla)
+//  - null      → tarih girilmemiş
+type ExamStatus = number | 'today' | 'past' | null
+function examStatusOf(dateStr: string | null | undefined): ExamStatus {
   if (!dateStr) return null
   const d = new Date(dateStr)
   const now = new Date()
   now.setHours(0, 0, 0, 0)
   d.setHours(0, 0, 0, 0)
   const diff = Math.round((d.getTime() - now.getTime()) / 86400000)
-  return diff > 0 ? diff : null
+  if (diff > 0) return diff
+  if (diff === 0) return 'today'
+  return 'past'
 }
 
 function taskTypeLabel(type: string): string {
@@ -1020,7 +1029,24 @@ export default function DashboardPage() {
     return uid ? getExamGoal(uid) : null
   }, [])
 
-  const daysLeft = daysUntil(profile?.examDate ?? localData?.examDate)
+  const examDateStr = profile?.examDate ?? localData?.examDate
+  const examStatus = examStatusOf(examDateStr)
+  const daysLeft = typeof examStatus === 'number' ? examStatus : null
+
+  // Sınav tarihi geçtiyse (yarın ve sonrası) tarih girilmemiş gibi sıfırlanır:
+  // local cache + AppState + backend profili. "Sınav bugün" durumunda sıfırlanmaz,
+  // o gün boyunca kutlama mesajı durur.
+  useEffect(() => {
+    if (examStatus !== 'past') return
+    const uid = getUserId()
+    if (!uid) return
+    const current = getOnboardingData(uid)
+    if (!current?.examDate) return
+    const updated = { ...current, examDate: null }
+    saveOnboardingData(uid, updated)
+    pushAppState('onboarding_data', updated)
+    api.post('/UserProfile', updated).catch(() => {})
+  }, [examStatus])
 
   const subjectPool = useMemo(() => {
     const targetExam = profile?.targetExam || localData?.targetExam || ''
@@ -1185,10 +1211,32 @@ export default function DashboardPage() {
                 <span className="text-white/90 text-xs font-bold tracking-widest mt-1">GÜN</span>
               </div>
             )}
+            {examStatus === 'today' && (
+              <div
+                className="flex flex-col items-center justify-center w-28 h-28 rounded-full shrink-0 self-center text-center px-2"
+                style={{ background: 'linear-gradient(135deg, #16A34A, #10B981)', boxShadow: '0 8px 24px rgba(16,185,129,0.4)' }}
+              >
+                <span className="text-3xl leading-none">🎯</span>
+                <span className="text-white text-xs font-extrabold mt-1 leading-tight">Sınav<br/>Günü!</span>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="px-8 sm:px-10 pt-8 space-y-8 sm:space-y-12">
+          {/* Sınav günü kutlama mesajı — yalnızca sınav bugünse, o gün boyunca */}
+          {examStatus === 'today' && (
+            <div
+              className="rounded-3xl p-7 text-center shadow-md"
+              style={{ background: 'linear-gradient(135deg, #16A34A, #10B981)' }}
+            >
+              <p className="text-5xl mb-2">🎉</p>
+              <p className="text-2xl font-extrabold text-white">Sınavında başarılar!</p>
+              <p className="text-base text-white/85 mt-2">
+                Bugün senin günün. Sakin ol, kendine güven — emeklerinin karşılığını alacaksın. 💪
+              </p>
+            </div>
+          )}
           {/* Hedefe Kalan Yol — sadece kullanıcı profilden hedef girdiyse gösterilir */}
           {(() => {
             const tytH = (examGoal?.tytHedef ?? '').trim()
@@ -1196,8 +1244,11 @@ export default function DashboardPage() {
             const hasTyt = tytH.length > 0
             const hasAyt = aytH.length > 0
             if (!hasTyt && !hasAyt) return null
+            // OkulSinavi → hedef "net" değil "ortalama" (not ortalaması).
+            const targetExam = profile?.targetExam || localData?.targetExam || ''
+            const unitLabel = targetExam === 'OkulSinavi' ? 'Ortalama' : 'Net'
             const line = (hedef: string, net: number | null) =>
-              net != null ? `${hedef} — ${net.toFixed(1)} Net` : hedef
+              net != null ? `${hedef} — ${net.toFixed(1)} ${unitLabel}` : hedef
             return (
               <div
                 className="rounded-3xl p-6 shadow-md"

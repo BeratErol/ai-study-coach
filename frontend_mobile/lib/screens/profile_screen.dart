@@ -2217,6 +2217,7 @@ class _SinavTarihiSectionState
     }
 
     ref.invalidate(examCountdownProvider);
+    ref.invalidate(examStatusProvider);
     if (mounted) {
       setState(() => _dateDirty = false);
       _showSnack(context, 'Sınav tarihi güncellendi! ✅',

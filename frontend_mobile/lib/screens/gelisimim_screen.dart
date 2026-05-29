@@ -42,8 +42,23 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
     final xpAsync = ref.watch(xpInfoProvider);
     final distAsync = ref.watch(lessonDistributionProvider(filter));
     final localStats = ref.watch(localTodayStatsProvider);
-    final localXpBoost = ref.watch(localXpBoostProvider);
     final localAllAsync = ref.watch(localAllTimeStatsProvider);
+    // XP boost: bugün + geçmiş tamamlanan dersler (her biri 10 XP). Backend XP'si
+    // yalnızca soru/oturum kaydı olan hesaplarda dolu; sadece ders tamamlayan
+    // hesaplarda geçmiş tamamlamalar da buradan XP'ye eklenir.
+    final pastCompleted = localAllAsync.value?.completedTasks ?? 0;
+    final localXpBoost =
+        (localStats.completedTasks + pastCompleted) * 10;
+    // Streak için client aktivite günleri + soru günleri.
+    final clientActiveDays =
+        ref.watch(streakActiveDaysProvider).value ?? <String>{};
+    final questionsByDayForStreak =
+        ref.watch(questionsByDayProvider).value ?? const <QuestionsByDay>[];
+    int streakFor(XpInfo xp) => computeEffectiveStreak(
+          xp: xp,
+          clientActiveDays: clientActiveDays,
+          questionsByDay: questionsByDayForStreak,
+        );
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -59,14 +74,17 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
             // ── Green XP header ──────────────────────────────────────────
             SliverToBoxAdapter(
               child: xpAsync.when(
-                data: (xp) => _XpHeader(
-                  xp: applyXpBoost(xp, localXpBoost),
-                  localCompletedToday: localStats.completedTasks,
-                ),
+                data: (xp) {
+                  final boosted = applyXpBoost(xp, localXpBoost);
+                  return _XpHeader(
+                    xp: boosted,
+                    effectiveStreak: streakFor(boosted),
+                  );
+                },
                 loading: () => _XpHeaderSkeleton(),
                 error: (e, st) => _XpHeader(
                   xp: XpInfo.empty,
-                  localCompletedToday: localStats.completedTasks,
+                  effectiveStreak: streakFor(XpInfo.empty),
                 ),
               ),
             ),
@@ -353,17 +371,37 @@ class _ScopeChoice extends StatelessWidget {
 
 // ─── XP Header ────────────────────────────────────────────────────────────────
 
+/// Streak = backend (soru/oturum) ∪ client (tamamlanan ders) aktivite günleri,
+/// bugünden geriye ardışık sayılır. Sadece ders tamamlayan (soru/oturum
+/// kaydı olmayan) hesaplarda backend streakBeforeToday=0 döndüğü için
+/// client günleri de hesaba katılır.
+int computeEffectiveStreak({
+  required XpInfo xp,
+  required Set<String> clientActiveDays,
+  required List<QuestionsByDay> questionsByDay,
+}) {
+  String ymd(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  final active = <String>{...clientActiveDays};
+  for (final q in questionsByDay) {
+    if (q.questions.any((e) => e.count > 0)) active.add(q.date);
+  }
+  final now = DateTime.now();
+  var cursor = DateTime(now.year, now.month, now.day);
+  int count = 0;
+  while (active.contains(ymd(cursor))) {
+    count++;
+    cursor = cursor.subtract(const Duration(days: 1));
+  }
+  return count > xp.streakDays ? count : xp.streakDays;
+}
+
 class _XpHeader extends StatelessWidget {
   final XpInfo xp;
-  final int localCompletedToday;
-  const _XpHeader({required this.xp, this.localCompletedToday = 0});
+  final int effectiveStreak;
+  const _XpHeader({required this.xp, this.effectiveStreak = 0});
 
-  // Soru çözümü VEYA tamamlanan ders → bugün aktif.
-  int get _effectiveStreak {
-    final backendCountsToday = xp.streakDays > xp.streakBeforeToday;
-    final todayActive = backendCountsToday || localCompletedToday > 0;
-    return todayActive ? xp.streakBeforeToday + 1 : 0;
-  }
+  int get _effectiveStreak => effectiveStreak;
 
   @override
   Widget build(BuildContext context) {
@@ -665,16 +703,18 @@ class _ActionButtons extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final xp = ref.watch(xpInfoProvider).valueOrNull;
-    final localStats = ref.watch(localTodayStatsProvider);
-
-    // Bugün soru çözümü VEYA tamamlanan ders varsa streak'i göster.
-    int effectiveStreak() {
-      if (xp == null) return 0;
-      final backendCountsToday = xp.streakDays > xp.streakBeforeToday;
-      final todayActive = backendCountsToday || localStats.completedTasks > 0;
-      return todayActive ? xp.streakBeforeToday + 1 : 0;
-    }
-    final streak = effectiveStreak();
+    // Streak: backend ∪ client aktivite günleri (XP header ile aynı mantık).
+    final clientActiveDays =
+        ref.watch(streakActiveDaysProvider).value ?? <String>{};
+    final questionsByDayForStreak =
+        ref.watch(questionsByDayProvider).value ?? const <QuestionsByDay>[];
+    final streak = xp == null
+        ? 0
+        : computeEffectiveStreak(
+            xp: xp,
+            clientActiveDays: clientActiveDays,
+            questionsByDay: questionsByDayForStreak,
+          );
 
     return IntrinsicHeight(
       child: Row(
@@ -799,8 +839,8 @@ class _FilterToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final allLabel = (selected == 'all' && weeklyHistoryOn)
         ? (allScope == 'current'
-            ? 'Tüm Zamanlar · Mevcut Program'
-            : 'Tüm Zamanlar · Hepsi')
+            ? 'Tüm Zamanlar ·\nMevcut Program'
+            : 'Tüm Zamanlar ·\nHepsi')
         : 'Tüm Zamanlar';
     return Container(
       padding: const EdgeInsets.all(4),
@@ -808,17 +848,20 @@ class _FilterToggle extends StatelessWidget {
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Row(
-        children: [
-          _Btn(
-              label: 'Bugün',
-              active: selected == 'today',
-              onTap: () => onChanged('today')),
-          _Btn(
-              label: allLabel,
-              active: selected == 'all',
-              onTap: () => onChanged('all')),
-        ],
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Btn(
+                label: 'Bugün',
+                active: selected == 'today',
+                onTap: () => onChanged('today')),
+            _Btn(
+                label: allLabel,
+                active: selected == 'all',
+                onTap: () => onChanged('all')),
+          ],
+        ),
       ),
     );
   }
@@ -850,12 +893,15 @@ class _Btn extends StatelessWidget {
           alignment: Alignment.center,
           child: Text(
             label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
             style: TextStyle(
               color: active
                   ? Colors.white
                   : AppColors.textSecondary,
               fontWeight: FontWeight.w600,
               fontSize: 14,
+              height: 1.2,
             ),
           ),
         ),
@@ -1168,14 +1214,31 @@ class _CompletedLessonsByDaySection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final daysAsync = ref.watch(completedLessonsByDayProvider);
-    final weeklyOn = ref.watch(weeklyHistoryEnabledProvider).value ?? false;
+    final weeklyOnRaw = ref.watch(weeklyHistoryEnabledProvider).value ?? false;
+    final scope = ref.watch(activeAllScopeProvider);
+    // Haftalık gruplama yalnızca "Bütün Zamanlar" kapsamında. Mevcut program
+    // kapsamında günlük (eskisi gibi) gösterilir.
+    final weeklyOn = weeklyOnRaw && scope == 'total';
     final planAsync = ref.watch(studyPlanProvider);
-    final planStart = planAsync.maybeWhen(
-      data: (p) => p.isNotEmpty
-          ? DateTime(p.first.date.year, p.first.date.month, p.first.date.day)
-          : null,
-      orElse: () => null,
-    );
+    final planList = planAsync.value ?? const [];
+    final planStart = planList.isNotEmpty
+        ? DateTime(planList.first.date.year, planList.first.date.month, planList.first.date.day)
+        : null;
+    // Mevcut program penceresi (current scope filtresi için).
+    String? winStart;
+    String? winEnd;
+    if (planList.isNotEmpty) {
+      String fmt(DateTime d) =>
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      winStart = fmt(planList.first.date);
+      winEnd = fmt(planList.last.date);
+    }
+    bool inWindow(String date) {
+      final s = winStart;
+      final e = winEnd;
+      if (scope != 'current' || s == null || e == null) return true;
+      return date.compareTo(s) >= 0 && date.compareTo(e) <= 0;
+    }
     return daysAsync.when(
       loading: () => Container(
         height: 120,
@@ -1185,7 +1248,9 @@ class _CompletedLessonsByDaySection extends ConsumerWidget {
         ),
       ),
       error: (_, _) => const SizedBox.shrink(),
-      data: (days) {
+      data: (allDays) {
+        // Mevcut program kapsamı: yalnızca plan penceresine düşen günler.
+        final days = allDays.where((e) => inWindow(e.date)).toList();
         if (days.isEmpty) {
           return Container(
             width: double.infinity,
@@ -1329,14 +1394,29 @@ class _QuestionsByDaySection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final daysAsync = ref.watch(questionsByDayProvider);
-    final weeklyOn = ref.watch(weeklyHistoryEnabledProvider).value ?? false;
+    final weeklyOnRaw = ref.watch(weeklyHistoryEnabledProvider).value ?? false;
+    final scope = ref.watch(activeAllScopeProvider);
+    // Haftalık gruplama yalnızca "Bütün Zamanlar" kapsamında.
+    final weeklyOn = weeklyOnRaw && scope == 'total';
     final planAsync = ref.watch(studyPlanProvider);
-    final planStart = planAsync.maybeWhen(
-      data: (p) => p.isNotEmpty
-          ? DateTime(p.first.date.year, p.first.date.month, p.first.date.day)
-          : null,
-      orElse: () => null,
-    );
+    final planList = planAsync.value ?? const [];
+    final planStart = planList.isNotEmpty
+        ? DateTime(planList.first.date.year, planList.first.date.month, planList.first.date.day)
+        : null;
+    String? winStart;
+    String? winEnd;
+    if (planList.isNotEmpty) {
+      String fmt(DateTime d) =>
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      winStart = fmt(planList.first.date);
+      winEnd = fmt(planList.last.date);
+    }
+    bool inWindow(String date) {
+      final s = winStart;
+      final e = winEnd;
+      if (scope != 'current' || s == null || e == null) return true;
+      return date.compareTo(s) >= 0 && date.compareTo(e) <= 0;
+    }
     return daysAsync.when(
       loading: () => Container(
         height: 120,
@@ -1346,7 +1426,8 @@ class _QuestionsByDaySection extends ConsumerWidget {
         ),
       ),
       error: (_, _) => const SizedBox.shrink(),
-      data: (days) {
+      data: (allDays) {
+        final days = allDays.where((e) => inWindow(e.date)).toList();
         if (days.isEmpty) {
           return Container(
             width: double.infinity,

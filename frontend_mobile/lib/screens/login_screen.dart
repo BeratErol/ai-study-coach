@@ -80,6 +80,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ref.invalidate(topicAssignmentsProvider);
         ref.invalidate(chatbotProvider);
         ref.invalidate(restDaysProvider);
+        // "Tüm Zamanlar" kapsam bayrağı kullanıcıya özel — önceki hesaptan
+        // kalan true değeri yeni hesaba sızmasın diye sıfırla.
+        ref.invalidate(weeklyHistoryEnabledProvider);
+        ref.read(activeAllScopeProvider.notifier).state = 'total';
+        ref.read(activeFilterProvider.notifier).state = 'today';
         if (!mounted) return;
         await _checkOnboardingStatus();
       }
@@ -133,6 +138,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ref.invalidate(todayTasksProvider);
       ref.invalidate(onboardingDataProvider);
       ref.invalidate(chatbotProvider);
+      // Kapsam bayrağı hydrate ile güncellenmiş olabilir → taze oku.
+      ref.invalidate(weeklyHistoryEnabledProvider);
       if (mounted) context.go('/dashboard');
     } else if (profileExists == false) {
       // Açıkça 404 → backend'de profil yok → onboarding gerekli

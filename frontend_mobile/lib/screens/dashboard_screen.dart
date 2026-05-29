@@ -33,6 +33,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.invalidate(examCountdownProvider);
+      ref.invalidate(examStatusProvider);
       ref.invalidate(onboardingDataProvider);
       ref.invalidate(studyPlanProvider);
       ref.invalidate(todayTasksProvider);
@@ -44,7 +45,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final todayAsync = ref.watch(todayTasksProvider);
-    final examAsync = ref.watch(examCountdownProvider);
+    final examStatusAsync = ref.watch(examStatusProvider);
+    final examStatus = examStatusAsync.value;
 
     final dayName = DateFormat('EEEE', 'tr_TR').format(DateTime.now());
     final taskCount =
@@ -123,18 +125,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           ),
                         ),
                       ),
-                      // Countdown ball
-                      examAsync.when(
-                        loading: () => const SizedBox.shrink(),
-                        error: (_, _) => const SizedBox.shrink(),
-                        data: (days) => days == null
-                            ? const SizedBox.shrink()
-                            : Positioned(
-                                right: 16,
-                                bottom: 0,
-                                child: _CountdownBall(days: days),
-                              ),
-                      ),
+                      // Countdown ball / Sınav günü rozeti
+                      if (examStatus != null &&
+                          examStatus.phase == ExamPhase.upcoming)
+                        Positioned(
+                          right: 16,
+                          bottom: 0,
+                          child: _CountdownBall(days: examStatus.daysLeft),
+                        )
+                      else if (examStatus != null &&
+                          examStatus.phase == ExamPhase.today)
+                        const Positioned(
+                          right: 16,
+                          bottom: 0,
+                          child: _ExamDayBall(),
+                        ),
                     ],
                   ),
                 ),
@@ -345,6 +350,12 @@ class _ExamGoalCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final goalAsync = ref.watch(examGoalProvider);
+    // OkulSinavi → hedef "net" değil "ortalama" (not ortalaması) olarak gösterilir.
+    final targetExam = ref.watch(onboardingDataProvider).maybeWhen(
+          data: (d) => d?.targetExam ?? '',
+          orElse: () => '',
+        );
+    final unitLabel = targetExam == 'OkulSinavi' ? 'Ortalama' : 'Net';
     return goalAsync.when(
       loading: () => const SizedBox.shrink(),
       error: (_, _) => const SizedBox.shrink(),
@@ -359,9 +370,9 @@ class _ExamGoalCard extends ConsumerWidget {
 
         if (!hasTyt && !hasAyt) return const SizedBox.shrink();
 
-        // Satır üret: "hedef — X.X Net" ya da sadece "hedef"
+        // Satır üret: "hedef — X.X Net/Ortalama" ya da sadece "hedef"
         String line(String hedef, double? net) =>
-            net != null ? '$hedef — ${net.toStringAsFixed(1)} Net' : hedef;
+            net != null ? '$hedef — ${net.toStringAsFixed(1)} $unitLabel' : hedef;
 
         return Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -497,6 +508,90 @@ class _CountdownBall extends StatelessWidget {
   }
 }
 
+// Sınav günü rozeti — kalan gün yerine bugün sınav olduğunda gösterilir.
+class _ExamDayBall extends StatelessWidget {
+  const _ExamDayBall();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 80,
+      height: 80,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF16A34A), Color(0xFF10B981)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF10B981).withValues(alpha: 0.4),
+            blurRadius: 20,
+            spreadRadius: 5,
+          ),
+        ],
+      ),
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('🎯', style: TextStyle(fontSize: 22)),
+          SizedBox(height: 2),
+          Text(
+            'SINAV\nGÜNÜ',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Sınav günü kutlama mesajı — içerik alanının üstünde, o gün boyunca.
+class _ExamDayBanner extends StatelessWidget {
+  const _ExamDayBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF16A34A), Color(0xFF10B981)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: const Column(
+        children: [
+          Text('🎉', style: TextStyle(fontSize: 44)),
+          SizedBox(height: 8),
+          Text('Sınavında başarılar!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800)),
+          SizedBox(height: 6),
+          Text(
+            'Bugün senin günün. Sakin ol, kendine güven — emeklerinin karşılığını alacaksın. 💪',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CONTENT AREA
 // ─────────────────────────────────────────────────────────────────────────────
@@ -522,10 +617,20 @@ class _ContentArea extends ConsumerWidget {
       orElse: () => false,
     );
 
+    // Sınav bugünse kutlama mesajı (o gün boyunca).
+    final isExamDay = ref.watch(examStatusProvider).maybeWhen(
+          data: (s) => s.phase == ExamPhase.today,
+          orElse: () => false,
+        );
+
     return Column(
       children: [
         _WeeklyPlanButton(onTap: onWeeklyPlan),
         const SizedBox(height: 16),
+        if (isExamDay) ...[
+          const _ExamDayBanner(),
+          const SizedBox(height: 16),
+        ],
         if (planExpired)
           _PlanExpiredState(
             onRenewSame: () => _showRenewSameDialog(context, ref),
@@ -543,9 +648,12 @@ class _ContentArea extends ConsumerWidget {
     );
   }
 
-  void _showRenewSameDialog(BuildContext context, WidgetRef ref) {
-    final data = ref.read(onboardingDataProvider).value;
-    if (data == null) return;
+  Future<void> _showRenewSameDialog(BuildContext context, WidgetRef ref) async {
+    // .value yerine .future: provider invalidate edildikten sonra ilk açılışta
+    // eski hesabın cache'lenmiş değeri dönebiliyor. .future her zaman güncel
+    // (yeni hesabın) onboarding verisini çözer.
+    final data = await ref.read(onboardingDataProvider.future);
+    if (data == null || !context.mounted) return;
     showDialog(
       context: context,
       builder: (dialogCtx) => _RenewSameDialog(
@@ -564,9 +672,9 @@ class _ContentArea extends ConsumerWidget {
     );
   }
 
-  void _showRenewChangeSheet(BuildContext context, WidgetRef ref) {
-    final data = ref.read(onboardingDataProvider).value;
-    if (data == null) return;
+  Future<void> _showRenewChangeSheet(BuildContext context, WidgetRef ref) async {
+    final data = await ref.read(onboardingDataProvider.future);
+    if (data == null || !context.mounted) return;
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
@@ -983,7 +1091,8 @@ class _RenewChangeSheetState extends State<_RenewChangeSheet> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            padding: EdgeInsets.fromLTRB(
+                20, 8, 20, 16 + MediaQuery.of(context).padding.bottom),
             child: Row(
               children: [
                 Expanded(
@@ -1877,7 +1986,10 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
 
   void _pickTopic(BuildContext context, String blockId, String subjectName) {
     final predefinedTopics = getTopicsForSubject(subjectName);
-    String? selected = ref.read(topicAssignmentsProvider)[blockId];
+    final initialSelected = ref.read(topicAssignmentsProvider)[blockId];
+    // Controller bir kez oluşturulur — StatefulBuilder içinde yaratılırsa her
+    // tuş basışında sıfırlanırdı.
+    final ctrl = TextEditingController();
 
     void assignAndClose(BuildContext ctx, String topic) {
       ref.read(topicAssignmentsProvider.notifier).assign(blockId, topic);
@@ -1888,11 +2000,12 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => StatefulBuilder(
         builder: (ctx, setSt) {
-          final ctrl = TextEditingController();
+          String? selected = initialSelected;
           return Padding(
             padding: EdgeInsets.only(
                 bottom: MediaQuery.of(ctx).viewInsets.bottom),
@@ -1907,7 +2020,7 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
                       borderRadius: BorderRadius.circular(2)),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
                   child: Row(
                     children: [
                       Expanded(
@@ -1936,11 +2049,12 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
                       Expanded(
                         child: TextField(
                           controller: ctrl,
+                          autofocus: predefinedTopics.isEmpty,
                           decoration: InputDecoration(
                             hintText: 'Konu adı yaz ve ekle…',
                             isDense: true,
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 10),
+                                horizontal: 12, vertical: 12),
                             border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10)),
                           ),
@@ -1958,7 +2072,7 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
                           if (t.isNotEmpty) assignAndClose(ctx, t);
                         },
                         child: Container(
-                          height: 42, width: 42,
+                          height: 46, width: 46,
                           decoration: BoxDecoration(
                             color: const Color(0xFF4F46E5),
                             borderRadius: BorderRadius.circular(10),
@@ -1995,8 +2109,17 @@ class _TopicEditorSheetState extends ConsumerState<_TopicEditorSheet> {
                       },
                     ),
                   ),
-                ],
-                const SizedBox(height: 16),
+                ] else
+                  // Sabit konu listesi olmayan (manuel/okul) dersler için ipucu.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+                    child: Text(
+                      'Bu ders için hazır konu listesi yok. Yukarıya konu adını yazıp ekleyebilirsin.',
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey.shade500),
+                    ),
+                  ),
+                SizedBox(height: 16 + MediaQuery.of(ctx).padding.bottom),
               ],
             ),
           );
