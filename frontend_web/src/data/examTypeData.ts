@@ -88,8 +88,28 @@ export const examTypes: ExamTypeInfo[] = [
     displayName: 'KPSS (Lisans)',
     apiType: 'KPSS_LISANS',
     lessons: [
-      { name: 'Genel Yetenek', maxQuestions: 60 },
-      { name: 'Genel Kültür', maxQuestions: 60 },
+      // Genel Yetenek (60 soru): Türkçe 30, Matematik 27, Geometri 3.
+      { name: 'Türkçe', maxQuestions: 30 },
+      { name: 'Matematik', maxQuestions: 27 },
+      { name: 'Geometri', maxQuestions: 3 },
+      // Genel Kültür (60 soru): Tarih 27, Coğrafya 18, Vatandaşlık 9, Güncel 6.
+      { name: 'Tarih', maxQuestions: 27 },
+      { name: 'Coğrafya', maxQuestions: 18 },
+      { name: 'Vatandaşlık', maxQuestions: 9 },
+      { name: 'Güncel Bilgiler', maxQuestions: 6 },
+    ],
+  },
+  {
+    displayName: 'KPSS (Önlisans)',
+    apiType: 'KPSS_ONLISANS',
+    lessons: [
+      { name: 'Türkçe', maxQuestions: 30 },
+      { name: 'Matematik', maxQuestions: 27 },
+      { name: 'Geometri', maxQuestions: 3 },
+      { name: 'Tarih', maxQuestions: 27 },
+      { name: 'Coğrafya', maxQuestions: 18 },
+      { name: 'Vatandaşlık', maxQuestions: 9 },
+      { name: 'Güncel Bilgiler', maxQuestions: 6 },
     ],
   },
   {
@@ -156,7 +176,16 @@ export function availableExamTypes(targetExam: string, selectedArea: string): Ex
   } else if (exam === 'TYT') allowed = ['TYT']
   else if (exam === 'AYT') allowed = ['AYT_SAYISAL', 'AYT_EA', 'AYT_SOZEL', 'AYT_DIL', 'BRANS']
   else if (exam === 'YDT') allowed = ['AYT_DIL']
-  else if (exam === 'KPSS') allowed = ['KPSS_LISANS', 'BRANS']
+  else if (exam === 'KPSS') {
+    // KPSS Lisans/Önlisans seçimine göre yalnızca ilgili sınav türü gösterilir.
+    if (area.includes('ONLISANS') || area.includes('ÖNLISANS')) {
+      allowed = ['KPSS_ONLISANS', 'BRANS']
+    } else if (area.includes('LISANS')) {
+      allowed = ['KPSS_LISANS', 'BRANS']
+    } else {
+      allowed = ['KPSS_LISANS', 'KPSS_ONLISANS', 'BRANS']
+    }
+  }
   else if (exam === 'LGS') allowed = ['LGS', 'BRANS']
   else if (exam === 'ALES') allowed = ['ALES']
   else if (exam === 'YDS') allowed = ['YDS']

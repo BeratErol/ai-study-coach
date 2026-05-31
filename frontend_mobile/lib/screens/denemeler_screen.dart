@@ -52,6 +52,20 @@ double _getDetailNet(Map<String, dynamic> exam, String lessonName) {
   return 0.0;
 }
 
+/// Net formatlama: değeri en yakın 0.25'e yuvarlar (gerçek deneme net birimi).
+/// Tam sayıysa ondalıksız, aksi takdirde .25/.5/.75 olarak gösterir
+/// (ortalama 59.63 → 59.75 gibi). Web fmtNet ile aynı davranış.
+String _fmtNet(double n) {
+  final rounded = (n * 4).round() / 4;
+  if (rounded == rounded.truncateToDouble()) return rounded.toInt().toString();
+  String s = rounded.toStringAsFixed(2);
+  while (s.endsWith('0')) {
+    s = s.substring(0, s.length - 1);
+  }
+  if (s.endsWith('.')) s = s.substring(0, s.length - 1);
+  return s;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,7 +122,14 @@ class _DenemeScreenState extends ConsumerState<DenemeScreen> {
     } else if (exam == 'YDT') {
       allowed = ['AYT_DIL'];
     } else if (exam == 'KPSS') {
-      allowed = ['KPSS_LISANS', 'BRANS'];
+      // Alana göre yalnızca ilgili sınav türünü göster.
+      if (area.contains('ONLISANS') || area.contains('ÖNLISANS')) {
+        allowed = ['KPSS_ONLISANS', 'BRANS'];
+      } else if (area.contains('LISANS')) {
+        allowed = ['KPSS_LISANS', 'BRANS'];
+      } else {
+        allowed = ['KPSS_LISANS', 'KPSS_ONLISANS', 'BRANS'];
+      }
     } else if (exam == 'LGS') {
       allowed = ['LGS', 'BRANS'];
     } else if (exam == 'ALES') {
@@ -897,19 +918,19 @@ class _NetSummaryCard extends StatelessWidget {
           Row(
             children: [
               _StatBox(
-                  value: maxNet.toStringAsFixed(isOkul ? 0 : 1),
+                  value: isOkul ? maxNet.toStringAsFixed(0) : _fmtNet(maxNet),
                   label: 'En Yüksek',
                   arrow: '↑',
                   color: const Color(0xFF10B981)),
               const SizedBox(width: 10),
               _StatBox(
-                  value: minNet.toStringAsFixed(isOkul ? 0 : 1),
+                  value: isOkul ? minNet.toStringAsFixed(0) : _fmtNet(minNet),
                   label: 'En Düşük',
                   arrow: '↓',
                   color: const Color(0xFFEF4444)),
               const SizedBox(width: 10),
               _StatBox(
-                  value: avg.toStringAsFixed(isOkul ? 0 : 1),
+                  value: isOkul ? avg.toStringAsFixed(0) : _fmtNet(avg),
                   label: 'Ortalama',
                   arrow: '→',
                   color: const Color(0xFF3B82F6)),
@@ -1154,7 +1175,7 @@ class _TrendChart extends StatelessWidget {
                       return touchedSpots.map((s) {
                         if (s.barIndex != 0) return null;
                         return LineTooltipItem(
-                          '$title\nGerçek Net: ${realNet.toStringAsFixed(1)}\nSeviye: ${levelNet.toStringAsFixed(1)}',
+                          '$title\nGerçek Net: ${_fmtNet(realNet)}\nSeviye: ${_fmtNet(levelNet)}',
                           const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
@@ -1169,7 +1190,7 @@ class _TrendChart extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Genel ortalama: ${avgNet.toStringAsFixed(1)} Net',
+            'Genel ortalama: ${_fmtNet(avgNet)} Net',
             style: const TextStyle(
                 fontSize: 12,
                 color: Color(0xFF9CA3AF)),
@@ -1350,7 +1371,7 @@ class _RadarCardState extends State<_RadarCard> {
                       ),
                     ),
                     Text(
-                      '${net.toStringAsFixed(1)} net',
+                      '${_fmtNet(net)} net',
                       style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -1400,10 +1421,11 @@ class _RadarWithLabels extends StatelessWidget {
   Widget build(BuildContext context) {
     // fl_chart: radius = min(w,h)/2 * 0.8
     // Grafik alanı etrafına etiket için padding bırakıyoruz.
-    // Üst/alt: vPad, Sağ/Sol: hPad
-    const double vPad = 18.0; // üst ve alt etiket için
-    const double hPad = 48.0; // sağ ve sol etiket için (daha geniş metin)
-    const double chartH = 240.0; // grafik yüksekliği (etiket padding hariç)
+    // Üst/alt: vPad (alt vertex'lerin etiketi çakışmasın diye geniş),
+    // Sağ/Sol: hPad (uzun ders adları için).
+    const double vPad = 28.0;
+    const double hPad = 56.0;
+    const double chartH = 240.0;
     const double totalH = chartH + vPad * 2;
 
     final int n = lessons.length;
@@ -1469,19 +1491,20 @@ class _RadarWithLabels extends StatelessWidget {
             final double w = c.maxWidth;
             final double cx = w / 2;
             final double cy = vPad + chartH / 2;
-            // fl_chart polygon radar etkili yarıçap (~0.85 deneysel).
+            // fl_chart polygon radar etkili yarıçap.
             final double r = math.min((w - 2 * hPad) / 2, chartH / 2) * 0.92;
-            const double labelW = 90;
+            const double labelW = 86;
             const double labelH = 22;
+            // Etiketi vertex'ten dışa it — şeklin içine girmesin.
+            const double pushH = 22;
+            const double pushV = 18;
             return Stack(
               children: labels.map((l) {
                 final double vx = cx + r * l.cosA;
                 final double vy = cy + r * l.sinA;
-                // Etiket merkezini vertex'in biraz dışına it: yatay offset
-                // cos*8, dikey offset sin*10 piksel.
-                final double tx = vx + l.cosA * 4;
-                final double ty = vy + l.sinA * 6;
-                // Pozitif left/top hesabı için merkezden offset
+                // Vertex'ten dışa doğru itme — şeklin DIŞINA çık.
+                final double tx = vx + l.cosA * pushH;
+                final double ty = vy + l.sinA * pushV;
                 final double left = (tx - labelW / 2).clamp(0.0, w - labelW);
                 final double top = (ty - labelH / 2).clamp(0.0, totalH - labelH);
                 // Yatay hizalama: sağdaki vertex'ler sol-hizalı, sol vertex'ler sağ-hizalı,
@@ -1548,7 +1571,7 @@ class _CoachCard extends StatelessWidget {
       }).toList();
 
       if (nets.length < 2) continue;
-      final netStr = nets.map((n) => n.toStringAsFixed(1)).join(' → ');
+      final netStr = nets.map(_fmtNet).join(' → ');
 
       if (nets.length >= 3 && nets[0] < nets[1] && nets[1] < nets[2]) {
         insights.add(_Insight(
@@ -1707,7 +1730,7 @@ class _ExamListCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              isOkul ? '${net.toStringAsFixed(0)} Net' : '${net.toStringAsFixed(1)} Net',
+              isOkul ? '${net.toStringAsFixed(0)} Net' : '${_fmtNet(net)} Net',
               style: const TextStyle(
                   color: Color(0xFF166534),
                   fontWeight: FontWeight.w700,
@@ -2376,11 +2399,11 @@ class _ComparisonSheetState extends State<_ComparisonSheet> {
       final sign = diff >= 0 ? '+' : '';
       if (trendUp) {
         trendText =
-            'Seçtiğin denemeler arasında toplam netinde $sign${diff.toStringAsFixed(1)} artış var. '
+            'Seçtiğin denemeler arasında toplam netinde $sign${_fmtNet(diff)} artış var. '
             'Harika gidiyorsun, bu ivmeyi koru! 🚀';
       } else {
         trendText =
-            'Seçtiğin denemeler arasında toplam netinde ${diff.toStringAsFixed(1)} düşüş var. '
+            'Seçtiğin denemeler arasında toplam netinde ${_fmtNet(diff)} düşüş var. '
             'Daha çok çalış ve konuları tekrar et. 💪';
       }
     }

@@ -172,6 +172,47 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
     return null;
   }
 
+  Widget _buildDayCell(DateTime day,
+      {required bool isSelected, required bool isToday}) {
+    final bg = _markerColor(day);
+    final isLightGreen =
+        bg != null && bg.toARGB32() == const Color(0xFF86EFAC).toARGB32();
+    final hasBg = bg != null;
+    Color textColor;
+    if (hasBg) {
+      textColor = isLightGreen ? const Color(0xFF065F46) : Colors.white;
+    } else if (isToday) {
+      textColor = const Color(0xFF4F46E5);
+    } else {
+      textColor = Theme.of(context).textTheme.bodyMedium?.color ??
+          Colors.black87;
+    }
+    return Container(
+      margin: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: hasBg
+            ? bg
+            : (isToday
+                ? const Color(0xFF4F46E5).withValues(alpha: 0.12)
+                : null),
+        shape: BoxShape.circle,
+        border: isSelected
+            ? Border.all(color: const Color(0xFF4F46E5), width: 2)
+            : null,
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '${day.day}',
+        style: TextStyle(
+          color: textColor,
+          fontWeight: (isSelected || isToday || hasBg)
+              ? FontWeight.w700
+              : FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
   String _toDateStr(DateTime day) =>
       '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
 
@@ -253,27 +294,7 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
                         _focusedDay = focusedDay;
                         _loadMonth(focusedDay);
                       },
-                      calendarStyle: CalendarStyle(
-                        todayDecoration: BoxDecoration(
-                          color: const Color(0xFF4F46E5)
-                              .withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        todayTextStyle: const TextStyle(
-                            color: Color(0xFF4F46E5),
-                            fontWeight: FontWeight.w700),
-                        selectedDecoration: const BoxDecoration(
-                          color: Color(0xFF4F46E5),
-                          shape: BoxShape.circle,
-                        ),
-                        selectedTextStyle: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700),
-                        markerDecoration: const BoxDecoration(
-                          color: Color(0xFFF59E0B),
-                          shape: BoxShape.circle,
-                        ),
-                        markersMaxCount: 1,
+                      calendarStyle: const CalendarStyle(
                         outsideDaysVisible: false,
                       ),
                       headerStyle: const HeaderStyle(
@@ -283,51 +304,12 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
                             fontSize: 16, fontWeight: FontWeight.w700),
                       ),
                       calendarBuilders: CalendarBuilders(
-                        // Seçili gün: dolgusu noktanın koyu tonuyla; nokta yok
-                        // (hem nokta hem arka plan birlikte gözükmesin).
-                        selectedBuilder: (ctx, day, _) {
-                          final base = _markerColor(day) ?? const Color(0xFF4F46E5);
-                          // Açık yeşil arka plan (kısmen tamamlanmış) seçiliyken
-                          // beyaz yazı okunmaz; koyu yeşil yazıya geç.
-                          final isLightGreen = base.toARGB32() == const Color(0xFF86EFAC).toARGB32();
-                          return Container(
-                            margin: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: base,
-                              shape: BoxShape.circle,
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              '${day.day}',
-                              style: TextStyle(
-                                color: isLightGreen
-                                    ? const Color(0xFF059669)
-                                    : Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          );
-                        },
-                        markerBuilder: (ctx, day, _) {
-                          // Seçili gün noktaya gerek yok — selectedBuilder zaten
-                          // dolgu rengiyle gösteriyor.
-                          if (isSameDay(_selectedDay, day)) return null;
-                          final color = _markerColor(day);
-                          if (color != null) {
-                            return Positioned(
-                              bottom: 4,
-                              child: Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            );
-                          }
-                          return null;
-                        },
+                        defaultBuilder: (ctx, day, _) =>
+                            _buildDayCell(day, isSelected: false, isToday: false),
+                        todayBuilder: (ctx, day, _) =>
+                            _buildDayCell(day, isSelected: false, isToday: true),
+                        selectedBuilder: (ctx, day, _) =>
+                            _buildDayCell(day, isSelected: true, isToday: isSameDay(day, DateTime.now())),
                       ),
                     ),
                     const SizedBox(height: 16),

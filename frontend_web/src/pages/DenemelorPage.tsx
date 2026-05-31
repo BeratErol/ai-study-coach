@@ -47,6 +47,18 @@ function detailNet(exam: ExamRecord, lessonName: string): number {
   return exam.details.find((d) => d.lessonName === lessonName)?.net ?? 0
 }
 
+// Net formatlama: değeri en yakın 0.25'e yuvarlar (gerçek deneme net birimi).
+// Tam sayıysa ondalıksız (35), aksi takdirde .25/.5/.75 olarak gösterir
+// (ortalama 59.63 → 59.75 gibi).
+function fmtNet(n: number): string {
+  const rounded = Math.round(n * 4) / 4
+  if (Number.isInteger(rounded)) return rounded.toString()
+  return rounded
+    .toFixed(2)
+    .replace(/0+$/, '')
+    .replace(/\.$/, '')
+}
+
 function fmtDate(s: string): string {
   const d = new Date(s)
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
@@ -327,10 +339,10 @@ function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSav
           style={{ background: 'rgba(79,70,229,0.07)', border: '1.5px solid rgba(79,70,229,0.35)' }}
         >
           <p className="text-xl font-extrabold" style={{ color: 'var(--primary)' }}>
-            Toplam Net: {totalNet.toFixed(2)}
+            Toplam Net: {fmtNet(totalNet)}
           </p>
           <p className="text-base mt-1" style={{ color: 'var(--text-hint)' }}>
-            Net = Doğru − (Yanlış ÷ 4)
+            {isOkulSinavi ? 'Net = Doğru Soru Sayısı' : 'Net = Doğru − (Yanlış ÷ 4)'}
           </p>
         </div>
 
@@ -407,7 +419,7 @@ function NetSummary({ exams, typeName }: { exams: ExamRecord[]; typeName: string
       <div className="grid grid-cols-3 gap-3">
         {boxes.map((b) => (
           <div key={b.label} className="rounded-xl py-4 text-center" style={{ background: `${b.color}1A` }}>
-            <p className="text-xl font-extrabold" style={{ color: b.color }}>{b.arrow} {b.value.toFixed(1)}</p>
+            <p className="text-xl font-extrabold" style={{ color: b.color }}>{b.arrow} {fmtNet(b.value)}</p>
             <p className="text-base mt-1" style={{ color: 'var(--text-secondary)' }}>{b.label}</p>
           </div>
         ))}
@@ -425,8 +437,8 @@ function TrendChart({ exams }: { exams: ExamRecord[] }) {
     running += e.totalNet
     return {
       label: shortDate(e.date),
-      net: parseFloat(e.totalNet.toFixed(1)),
-      level: parseFloat((running / (i + 1)).toFixed(1)),
+      net: e.totalNet,
+      level: running / (i + 1),
       title: e.title || examTypeDisplayName(e.type),
     }
   })
@@ -447,14 +459,14 @@ function TrendChart({ exams }: { exams: ExamRecord[] }) {
             <YAxis tick={{ fontSize: 12, fill: 'var(--text-hint)' }} />
             <Tooltip
               contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}
-              formatter={(v, name) => [v as number, name === 'net' ? 'Gerçek Net' : 'Seviye']}
+              formatter={(v, name) => [fmtNet(v as number), name === 'net' ? 'Gerçek Net' : 'Seviye']}
             />
             <Line type="monotone" dataKey="net" stroke="#4F46E5" strokeWidth={3} dot={{ r: 5, fill: '#4F46E5' }} />
             <Line type="monotone" dataKey="level" stroke="#9CA3AF" strokeWidth={2} strokeDasharray="6 4" dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <p className="text-base mt-2" style={{ color: 'var(--text-hint)' }}>Genel ortalama: {avg.toFixed(1)} Net</p>
+      <p className="text-base mt-2" style={{ color: 'var(--text-hint)' }}>Genel ortalama: {fmtNet(avg)} Net</p>
     </div>
   )
 }
@@ -545,7 +557,7 @@ function RadarCard({ exams, typeInfo }: { exams: ExamRecord[]; typeInfo: ExamTyp
               {(e.title || `Deneme ${i + 1}`)} ({shortDate(e.date)})
             </span>
             <span className="text-base font-bold" style={{ color: CHART_COLORS[i] }}>
-              {detailNet(e, activeLesson.name).toFixed(1)} net
+              {fmtNet(detailNet(e, activeLesson.name))} net
             </span>
           </div>
         ))}
@@ -571,7 +583,7 @@ function CoachCard({ exams }: { exams: ExamRecord[] }) {
   for (const lesson of lessons) {
     const nets = last3.map((e) => detailNet(e, lesson))
     if (nets.length < 2) continue
-    const netStr = nets.map((n) => n.toFixed(1)).join(' → ')
+    const netStr = nets.map(fmtNet).join(' → ')
     if (nets.length >= 3 && nets[0] < nets[1] && nets[1] < nets[2]) {
       insights.push({ text: `🎉 ${lesson} netiniz son 3 denemede sürekli artıyor (${netStr}). Harika ilerleme, böyle devam!`, isPositive: true })
     } else if (nets[nets.length - 1] > nets[0]) {
@@ -633,8 +645,8 @@ function ComparisonModal({ exams, typeInfo, onClose }: {
     const diff = nets[nets.length - 1] - nets[0]
     trendUp = diff >= 0
     trendText = trendUp
-      ? `Seçtiğin denemeler arasında toplam netinde +${diff.toFixed(1)} artış var. Harika gidiyorsun! 🚀`
-      : `Seçtiğin denemeler arasında toplam netinde ${diff.toFixed(1)} düşüş var. Daha çok çalış. 💪`
+      ? `Seçtiğin denemeler arasında toplam netinde +${fmtNet(diff)} artış var. Harika gidiyorsun! 🚀`
+      : `Seçtiğin denemeler arasında toplam netinde ${fmtNet(diff)} düşüş var. Daha çok çalış. 💪`
   }
 
   // Ders bazlı karşılaştırma
@@ -691,7 +703,7 @@ function ComparisonModal({ exams, typeInfo, onClose }: {
                 <LineChart
                   data={selected.map((e, i) => ({
                     label: e.title || shortDate(e.date),
-                    net: parseFloat(e.totalNet.toFixed(1)),
+                    net: e.totalNet,
                     idx: i,
                   }))}
                   margin={{ top: 10, right: 20, bottom: 10, left: -10 }}
@@ -701,7 +713,7 @@ function ComparisonModal({ exams, typeInfo, onClose }: {
                   <YAxis tick={{ fontSize: 11, fill: 'var(--text-hint)' }} />
                   <Tooltip
                     contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}
-                    formatter={(v) => [v as number, 'Net']}
+                    formatter={(v) => [fmtNet(v as number), 'Net']}
                   />
                   <Line type="monotone" dataKey="net" stroke="#F59E0B" strokeWidth={3} dot={{ r: 6, fill: '#F59E0B' }} />
                 </LineChart>
@@ -713,7 +725,7 @@ function ComparisonModal({ exams, typeInfo, onClose }: {
           <div className="flex gap-3">
             {selected.map((e, i) => (
               <div key={e.id} className="flex-1 rounded-xl py-3 text-center" style={{ background: `${CHART_COLORS[i]}1A` }}>
-                <p className="text-xl font-extrabold" style={{ color: CHART_COLORS[i] }}>{e.totalNet.toFixed(1)}</p>
+                <p className="text-xl font-extrabold" style={{ color: CHART_COLORS[i] }}>{fmtNet(e.totalNet)}</p>
                 <p className="text-base" style={{ color: 'var(--text-secondary)' }}>{shortDate(e.date)}</p>
               </div>
             ))}
@@ -741,7 +753,7 @@ function ComparisonModal({ exams, typeInfo, onClose }: {
                                 />
                               </div>
                               <span className="w-12 text-right text-base font-bold" style={{ color: CHART_COLORS[i] }}>
-                                {net.toFixed(1)}
+                                {fmtNet(net)}
                               </span>
                             </div>
                           )
@@ -784,7 +796,7 @@ function ExamCard({ exam, onEdit, onDelete }: {
         className="px-3 py-1.5 rounded-full text-base font-bold"
         style={{ background: '#DCFCE7', color: '#166534' }}
       >
-        {exam.totalNet.toFixed(1)} Net
+        {fmtNet(exam.totalNet)} Net
       </span>
       <button onClick={onEdit} className="text-xl" style={{ color: '#3B82F6' }} title="Düzenle">✏️</button>
       <button onClick={onDelete} className="text-xl" style={{ color: '#EF4444' }} title="Sil">🗑️</button>

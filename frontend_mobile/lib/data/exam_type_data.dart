@@ -94,8 +94,28 @@ const List<ExamTypeInfo> kExamTypes = [
     displayName: 'KPSS (Lisans)',
     apiType: 'KPSS_LISANS',
     lessons: [
-      LessonSlot('Genel Yetenek', 60),
-      LessonSlot('Genel Kültür', 60),
+      // Genel Yetenek (60): Türkçe 30, Matematik 27, Geometri 3.
+      LessonSlot('Türkçe', 30),
+      LessonSlot('Matematik', 27),
+      LessonSlot('Geometri', 3),
+      // Genel Kültür (60): Tarih 27, Coğrafya 18, Vatandaşlık 9, Güncel 6.
+      LessonSlot('Tarih', 27),
+      LessonSlot('Coğrafya', 18),
+      LessonSlot('Vatandaşlık', 9),
+      LessonSlot('Güncel Bilgiler', 6),
+    ],
+  ),
+  ExamTypeInfo(
+    displayName: 'KPSS (Önlisans)',
+    apiType: 'KPSS_ONLISANS',
+    lessons: [
+      LessonSlot('Türkçe', 30),
+      LessonSlot('Matematik', 27),
+      LessonSlot('Geometri', 3),
+      LessonSlot('Tarih', 27),
+      LessonSlot('Coğrafya', 18),
+      LessonSlot('Vatandaşlık', 9),
+      LessonSlot('Güncel Bilgiler', 6),
     ],
   ),
   ExamTypeInfo(
