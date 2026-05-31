@@ -9,8 +9,12 @@ import '../../providers/gelisimim_provider.dart';
 
 class GunlukRaporSheet extends ConsumerStatefulWidget {
   final String date; // "yyyy-MM-dd"
+  // Plan o günü dinlenme olarak işaretlemişse ya da kullanıcı manuel dinlenme
+  // moduna almışsa true. Aktivite olsa bile başlıkta "😴 Dinlenme günü"
+  // banner'ı gösterilir.
+  final bool isRestDay;
 
-  const GunlukRaporSheet({super.key, required this.date});
+  const GunlukRaporSheet({super.key, required this.date, this.isRestDay = false});
 
   @override
   ConsumerState<GunlukRaporSheet> createState() => _GunlukRaporSheetState();
@@ -152,13 +156,21 @@ class _GunlukRaporSheetState extends ConsumerState<GunlukRaporSheet> {
                   final completedLessons = data?.completedLessons ?? [];
 
                   final hasQuestions = report != null && report.questions.isNotEmpty;
-                  final hasSessions = dayBlocks.isNotEmpty;
+                  // Dinlenme gününde planlı oturum gösterilmez (zaten plan
+                  // dinlenme olarak işaretlenmiş, eski blok artıkları
+                  // missed/tamamlanmamış gözükmesin).
+                  final hasSessions = !widget.isRestDay && dayBlocks.isNotEmpty;
                   // Plan bloğu yoksa (yeni program → eski gün) ama tamamlanan
                   // ders detayı varsa onları göster.
-                  final hasLessonsOnly = !hasSessions && completedLessons.isNotEmpty;
+                  final hasLessonsOnly = (!hasSessions || widget.isRestDay) &&
+                      completedLessons.isNotEmpty;
                   final hasAnything = hasQuestions || hasSessions || hasLessonsOnly;
 
                   if (!hasAnything) {
+                    if (widget.isRestDay) {
+                      return const _RestDayBanner(
+                          message: 'Dinlenme günü');
+                    }
                     return const _EmptyState(
                       message: 'Bu güne ait kayıt bulunamadı.',
                     );
@@ -168,6 +180,10 @@ class _GunlukRaporSheetState extends ConsumerState<GunlukRaporSheet> {
                     controller: controller,
                     padding: const EdgeInsets.all(20),
                     children: [
+                      if (widget.isRestDay) ...[
+                        const _RestDayBanner(message: 'Dinlenme günü'),
+                        const SizedBox(height: 16),
+                      ],
                       if (hasSessions) ...[
                         _SessionSection(
                           blocks: dayBlocks,
@@ -577,6 +593,41 @@ class _EmptyState extends StatelessWidget {
             message,
             style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
             textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dinlenme günü banner'ı — sheet açıldığında üstte gösterilir.
+/// Aktivite varsa altına liste düşer, yoksa tek başına ortalanır.
+class _RestDayBanner extends StatelessWidget {
+  final String message;
+  const _RestDayBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF86EFAC)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('😴', style: TextStyle(fontSize: 20)),
+          const SizedBox(width: 8),
+          Text(
+            message,
+            style: const TextStyle(
+              color: Color(0xFF059669),
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+            ),
           ),
         ],
       ),

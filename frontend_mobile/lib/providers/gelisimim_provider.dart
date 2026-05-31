@@ -175,10 +175,10 @@ class CompletedLessonRecord {
       );
 }
 
-/// Streak için "çalışma günü" set'i: o gün PLAN OTURUMU tamamlanmış (w_ = zayıf,
-/// s_ = güçlü blok) günler. Manuel görevler (manual-) ve molalar (m_) çalışma
-/// sayılmaz → streak'i tetiklemez. Backend soru/oturum günleri XpInfo.streakDays
-/// ile ayrıca harmanlanır.
+/// Streak için "çalışma günü" set'i: o gün mola DIŞINDA herhangi bir görev
+/// (plan oturumu w_/s_ veya kullanıcının eklediği manuel görev) tamamlanmışsa
+/// gün aktif sayılır. Yalnızca molalar (m_) hariç tutulur. Soru çözümü olan
+/// günler ayrıca harmanlanır (questionsByDayProvider).
 final streakActiveDaysProvider = FutureProvider<Set<String>>((ref) async {
   final userId = await TokenService.getUserId();
   if (userId == null) return <String>{};
@@ -205,8 +205,8 @@ final streakActiveDaysProvider = FutureProvider<Set<String>>((ref) async {
     } else {
       ids = prefs.getStringList(key) ?? [];
     }
-    // Yalnızca plan oturumu (w_/s_) çalışma sayılır.
-    if (ids.any((id) => id.startsWith('w_') || id.startsWith('s_'))) {
+    // Mola dışında herhangi bir görev (plan w_/s_ veya manuel) çalışma sayılır.
+    if (ids.any((id) => !id.startsWith('m_'))) {
       days.add(date);
     }
   }

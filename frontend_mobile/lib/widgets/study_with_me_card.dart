@@ -6,7 +6,8 @@ const _ambientSounds = [
   _SoundEntry('🌧️', 'Yağmur Sesi', 'https://www.youtube.com/watch?v=mPZkdNFkNps'),
   _SoundEntry('🔥', 'Şömine Ateşi', 'https://www.youtube.com/watch?v=L_LUpnjgPso'),
   _SoundEntry('🌲', 'Orman & Kuşlar', 'https://www.youtube.com/watch?v=xNN7iTA57jM'),
-  _SoundEntry('☕', 'Kafe Ortamı', 'https://www.youtube.com/watch?v=gaGrHCGGODo'),
+  // Calmed By Nature — 8 saatlik kafe atmosferi (kahve makinesi, fısıltı, yağmur).
+  _SoundEntry('☕', 'Kafe Ortamı', 'https://www.youtube.com/watch?v=h2zkV-l_TbY'),
   _SoundEntry('🌊', 'Okyanus Dalgaları', 'https://www.youtube.com/watch?v=bn9F19Hi1Lk'),
 ];
 

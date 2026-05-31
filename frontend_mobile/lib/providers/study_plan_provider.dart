@@ -72,9 +72,36 @@ Future<void> regenerateStudyPlan(
     if (raw == null) return;
     data = OnboardingData.fromJson(raw);
   }
+  final prefs = await SharedPreferences.getInstance();
+  // Mevcut planı önce arşive ekle — eski plan günlerinin blok/dinlenme
+  // bilgisi "Geçmişi Gör" tarafından gerekli (web ile aynı mantık).
+  final oldRaw = prefs.getString(_weeklyPlanKey(userId));
+  if (oldRaw != null) {
+    try {
+      final oldList = (jsonDecode(oldRaw) as List).cast<dynamic>();
+      final archiveKey = 'user_${userId}_weekly_plan_archive';
+      final archiveRaw = prefs.getString(archiveKey);
+      final archive = archiveRaw == null
+          ? <dynamic>[]
+          : (jsonDecode(archiveRaw) as List).cast<dynamic>();
+      final knownDates = archive
+          .map((e) => ((e as Map)['date'] as String?)?.substring(0, 10))
+          .whereType<String>()
+          .toSet();
+      for (final d in oldList) {
+        final dt = (d as Map)['date'] as String?;
+        final k = dt?.substring(0, 10);
+        if (k != null && !knownDates.contains(k)) {
+          archive.add(d);
+          knownDates.add(k);
+        }
+      }
+      await prefs.setString(archiveKey, jsonEncode(archive));
+      await AppStateService.pushAppState('weekly_plan_archive', archive);
+    } catch (_) {}
+  }
   final plan = StudyPlanGenerator.generateWeeklyPlan(data);
   final jsonList = plan.map((d) => d.toJson()).toList();
-  final prefs = await SharedPreferences.getInstance();
   await prefs.setString(_weeklyPlanKey(userId), jsonEncode(jsonList));
   await AppStateService.pushAppState('weekly_plan', jsonList);
   // İlk yenilemeden itibaren Gelişimim "Tüm Zamanlar" haftalık gruplamaya geçer.
@@ -339,8 +366,16 @@ final todayTasksProvider = FutureProvider<List<StudyTask>>((ref) async {
 // ── Tamamlanan görev id'leri (kalıcı: userId + tarih bazlı) ───────────────
 
 class CompletedTasksNotifier extends StateNotifier<Set<String>> {
-  CompletedTasksNotifier() : super({}) {
+  final Ref? _ref;
+  CompletedTasksNotifier([this._ref]) : super({}) {
     _load();
+  }
+
+  /// Streak hesabı `streakActiveDaysProvider` (FutureProvider) üzerinden gider.
+  /// Bir tamamlama olduğunda o sağlayıcının cache'lediği veri eskir; bu helper
+  /// çağrısıyla invalidate edilip yenisi çözülür.
+  void _invalidateStreak() {
+    _ref?.invalidate(streakActiveDaysProvider);
   }
 
   static String _todayDate() {
@@ -397,17 +432,20 @@ class CompletedTasksNotifier extends StateNotifier<Set<String>> {
     if (task != null && !task.isMola) {
       _saveLesson(task);
     }
+    _invalidateStreak();
   }
 
   void unmark(String id) {
     state = {...state}..remove(id);
     _save();
     _removeLesson(id);
+    _invalidateStreak();
   }
 
   void markAll(Set<String> ids) {
     state = ids;
     _save();
+    _invalidateStreak();
   }
 
   /// Bugüne ait tüm tamamlanan görev id'lerini ve ders detaylarını siler.
@@ -423,6 +461,7 @@ class CompletedTasksNotifier extends StateNotifier<Set<String>> {
       await AppStateService.pushAppState(
           'completed_lessons_${_todayDate()}', const []);
     }
+    _invalidateStreak();
   }
 
   Future<void> _saveLesson(StudyTask t) async {
@@ -470,7 +509,7 @@ class CompletedTasksNotifier extends StateNotifier<Set<String>> {
 
 final completedTaskIdsProvider =
     StateNotifierProvider<CompletedTasksNotifier, Set<String>>(
-  (ref) => CompletedTasksNotifier(),
+  (ref) => CompletedTasksNotifier(ref),
 );
 
 // ── Dinlenme günleri — kullanıcının açıkça işaretlediği günler ───────────

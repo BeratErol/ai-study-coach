@@ -8,7 +8,7 @@ import {
   type LessonDistribution,
   type DailyReport,
 } from '../services/gelisimimService'
-import { getStudyPlan } from '../services/studyPlanLocal'
+import { getStudyPlan, getPlanArchive } from '../services/studyPlanLocal'
 import {
   getCompletedTaskIds, getManualTasks, getRestDays, getTopicAssignments,
   getAllCompletedTaskDays, getCompletedTaskIdsForDate,
@@ -239,18 +239,47 @@ function GecmisiGorModal({ completedLessons, onClose }: {
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
-  const [activeDays, setActiveDays] = useState<Set<string>>(new Set())
+  // İki ayrı set: oturum/manuel tamamlanan günler (yeşil) ve sadece soru
+  // çözülen günler (turuncu). Aktivite yoksa hiç renklendirilmez.
+  const [taskDays, setTaskDays] = useState<Set<string>>(new Set())
+  const [questionOnlyDays, setQuestionOnlyDays] = useState<Set<string>>(new Set())
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [report, setReport] = useState<DailyReport | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
 
-  const plan = useMemo(() => getStudyPlan(), [])
+  // Aktif plan + geçmiş plan arşivi birleşik — eski plan günlerinde de
+  // blok ve dinlenme bayrağı bilgisine erişebilelim. Aktif plan günleri
+  // arşivdekileri ezer (yeni plan o günde değişmiş olabilir).
+  const plan = useMemo(() => {
+    const active = getStudyPlan()
+    const archive = getPlanArchive()
+    const activeKeys = new Set(active.map((d) => d.date.slice(0, 10)))
+    const merged = [...archive.filter((d) => !activeKeys.has(d.date.slice(0, 10))), ...active]
+    return merged
+  }, [])
+  const restDaysSet = useMemo(() => new Set(getRestDays()), [])
 
   useEffect(() => {
+    // Yeşil = client'ta oturum/manuel görev tamamlanan günler (mola hariç).
+    // Turuncu = sadece soru çözülen (backend tarafından "aktif" sayılan ama
+    // client'ta tamamlanan görevi olmayan) günler.
+    const monthPrefix = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`
+    const localTask = new Set<string>()
+    for (const [date, ids] of Object.entries(getAllCompletedTaskDays())) {
+      if (!date.startsWith(monthPrefix)) continue
+      if ([...ids].some((id) => !id.startsWith('m_'))) localTask.add(date)
+    }
+    setTaskDays(localTask)
     gelisimimService
       .getCalendarActiveDays(viewYear, viewMonth + 1)
-      .then((days) => setActiveDays(new Set(days)))
-      .catch(() => setActiveDays(new Set()))
+      .then((days) => {
+        const qOnly = new Set<string>()
+        for (const d of days) {
+          if (!localTask.has(d)) qOnly.add(d)
+        }
+        setQuestionOnlyDays(qOnly)
+      })
+      .catch(() => setQuestionOnlyDays(new Set()))
   }, [viewYear, viewMonth])
 
   function selectDay(dateStr: string) {
@@ -304,6 +333,28 @@ function GecmisiGorModal({ completedLessons, onClose }: {
         </button>
       </div>
 
+      {/* Renk açıklamaları — sol sütun 3, sağ sütun 2 öğe */}
+      <div
+        className="grid grid-cols-1 sm:grid-cols-2 sm:grid-rows-3 sm:grid-flow-col gap-x-4 gap-y-1.5 mb-4 p-3 rounded-xl"
+        style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+      >
+        {[
+          { c: '#059669', t: 'Tüm Çalışma Oturumları Tamamlandı' },
+          { c: '#86EFAC', t: 'Çalışma Oturumu Tamamlandı' },
+          { c: '#F59E0B', t: 'Soru Çözümü Yapıldı' },
+          { c: '#EF4444', t: 'Çalışma Yapılmadı' },
+          { c: '#3B82F6', t: 'Dinlenme Günü' },
+        ].map((l) => (
+          <div key={l.t} className="flex items-center gap-2">
+            <span
+              className="inline-block w-3 h-3 rounded-full shrink-0"
+              style={{ background: l.c }}
+            />
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{l.t}</span>
+          </div>
+        ))}
+      </div>
+
       {/* Hafta günleri */}
       <div className="grid grid-cols-7 gap-1 mb-1">
         {WEEKDAYS.map((w) => (
@@ -316,17 +367,69 @@ function GecmisiGorModal({ completedLessons, onClose }: {
         {cells.map((day, i) => {
           if (day === null) return <div key={`e${i}`} />
           const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const isActive = activeDays.has(dateStr)
+          const hasTask = taskDays.has(dateStr)
+          const hasOnlyQuestion = !hasTask && questionOnlyDays.has(dateStr)
           const isToday = dateStr === todayStr
+          const isFuture = dateStr > todayStr
           const isSelected = dateStr === selectedDay
+          const planDayEntry = planByDate.get(dateStr)
+          const isRestDay =
+            (planDayEntry?.isOffDay ?? false) || restDaysSet.has(dateStr)
+          // O günün plan bloklarının tamamı tamamlandı mı? Eğer evetse koyu
+          // yeşil (taskFull), değilse açık yeşil (taskPartial).
+          let allTasksDone = false
+          if (hasTask && planDayEntry && !planDayEntry.isOffDay) {
+            const planBlockIds = planDayEntry.blocks
+              .filter((b) => !b.isMola)
+              .map((b) => b.id)
+            if (planBlockIds.length > 0) {
+              const doneIds = getCompletedTaskIdsForDate(dateStr)
+              allTasksDone = planBlockIds.every((id) => doneIds.has(id))
+            }
+          }
+          // Geçmiş veya bugün, programa dahil, dinlenme değil ve aktivite yoksa
+          // → kırmızı (kaçırılmış gün).
+          const isMissed =
+            !isFuture &&
+            !hasTask &&
+            !hasOnlyQuestion &&
+            !isRestDay &&
+            !!planDayEntry &&
+            !planDayEntry.isOffDay
+          // Aktivite yapılmamış dinlenme günü → mavi.
+          const isRestNoActivity =
+            !isFuture && isRestDay && !hasTask && !hasOnlyQuestion
+          // Renkler. Seçili durum tıklanan rengin koyu tonuyla gösterilir;
+          // taskPartial (açık yeşil) seçilince yine açık yeşil kalır.
+          type Tone = 'taskFull' | 'taskPartial' | 'question' | 'missed' | 'rest' | 'none'
+          const tone: Tone = hasTask
+            ? (allTasksDone ? 'taskFull' : 'taskPartial')
+            : hasOnlyQuestion
+              ? 'question'
+              : isMissed
+                ? 'missed'
+                : isRestNoActivity
+                  ? 'rest'
+                  : 'none'
+          const palette: Record<Tone, { bg: string; fg: string; selBg: string; selFg: string }> = {
+            taskFull:    { bg: '#059669', fg: '#fff',    selBg: '#047857', selFg: '#fff' },
+            taskPartial: { bg: '#D1FAE5', fg: '#059669', selBg: '#D1FAE5', selFg: '#059669' },
+            question:    { bg: '#FFEDD5', fg: '#C2410C', selBg: '#C2410C', selFg: '#fff' },
+            missed:      { bg: '#FEE2E2', fg: '#B91C1C', selBg: '#B91C1C', selFg: '#fff' },
+            rest:        { bg: '#DBEAFE', fg: '#1D4ED8', selBg: '#1D4ED8', selFg: '#fff' },
+            none:        { bg: 'var(--bg)', fg: 'var(--text-primary)', selBg: '#4F46E5', selFg: '#fff' },
+          }
+          const p = palette[tone]
+          const bg = isSelected ? p.selBg : p.bg
+          const fg = isSelected ? p.selFg : p.fg
           return (
             <button
               key={day}
               onClick={() => selectDay(dateStr)}
               className="aspect-square rounded-lg flex items-center justify-center text-base font-bold transition-all"
               style={{
-                background: isSelected ? '#10B981' : isActive ? '#D1FAE5' : 'var(--bg)',
-                color: isSelected ? '#fff' : isActive ? '#059669' : 'var(--text-primary)',
+                background: bg,
+                color: fg,
                 border: isToday ? '2px solid #10B981' : '1px solid var(--border)',
               }}
             >
@@ -351,20 +454,12 @@ function GecmisiGorModal({ completedLessons, onClose }: {
             const inPlan = !!planDay
 
             // Bugün ya da geçmiş gün için: kullanıcı dinlenme işaretlediyse
-            // ya da plan'da o gün isOffDay ise "Dinlenme günü" göster.
+            // ya da plan'da o gün isOffDay ise "Dinlenme günü" rozeti gösterilir.
+            // Dinlenme günü olsa da kullanıcı görev/soru girmiş olabilir; bu
+            // kayıtlar rozetin altında listelenir.
             const restDaysLocal = getRestDays()
             const isRestDay =
-              (planDay?.isOffDay ?? false) || restDaysLocal.includes(selectedDay)
-            if (!isFuture && isRestDay) {
-              return (
-                <p
-                  className="text-base px-4 py-6 rounded-xl text-center"
-                  style={{ background: '#F0FDF4', color: '#059669' }}
-                >
-                  😴 Dinlenme günü
-                </p>
-              )
-            }
+              !isFuture && ((planDay?.isOffDay ?? false) || restDaysLocal.includes(selectedDay))
 
             // Gelecek günler → planı göster
             if (isFuture) {
@@ -413,9 +508,12 @@ function GecmisiGorModal({ completedLessons, onClose }: {
             )
             const orphanMin = orphanIds.reduce((s, id) => s + (id.startsWith('s_') ? 30 : 60), 0)
 
-            // O günün planındaki tamamlanmamış görevler (plan penceresindeyse)
+            // O günün planındaki tamamlanmamış görevler (plan penceresindeyse).
+            // Dinlenme gününde planlı oturum olmaz → missed gösterme.
             const dayBlocks = (planDay?.blocks ?? []).filter((b) => !b.isMola)
-            const missedTasks = dayBlocks.filter((b) => !allDoneIds.has(b.id))
+            const missedTasks = isRestDay
+              ? []
+              : dayBlocks.filter((b) => !allDoneIds.has(b.id))
 
             const completedCount = (report?.tasks.completed ?? 0) + doneLessons.length + orphanIds.length
             const totalMin = (report?.tasks.totalMinutes ?? 0) + localMin + orphanMin
@@ -423,10 +521,17 @@ function GecmisiGorModal({ completedLessons, onClose }: {
 
             const hasAnything = completedCount > 0 || totalMin > 0 || questions.length > 0 || missedTasks.length > 0
             if (!hasAnything) {
+              // Dinlenme günü → kayıt yok ama "dinlenme günü" banner'ı gösterilir.
+              if (isRestDay) {
+                return (
+                  <p className="text-base px-4 py-6 rounded-xl text-center"
+                    style={{ background: '#F0FDF4', color: '#059669' }}>
+                    😴 Dinlenme günü
+                  </p>
+                )
+              }
               // Geçmiş günler için "programa dahil değil" yazmak yanıltıcı:
               // eski program günü olabilir, sadece o gün hiç aktivite olmamış olabilir.
-              // "Programa dahil değil" mesajı yalnızca gelecek + mevcut plan
-              // dışındaki günler için anlamlı.
               return (
                 <p className="text-base px-4 py-6 rounded-xl text-center" style={{ background: 'var(--bg)', color: 'var(--text-hint)' }}>
                   Bu güne ait kayıt bulunamadı.
@@ -435,16 +540,26 @@ function GecmisiGorModal({ completedLessons, onClose }: {
             }
             return (
               <div className="space-y-3">
-                <div className="flex gap-3">
-                  <div className="flex-1 px-4 py-3 rounded-xl text-center" style={{ background: '#EEF2FF' }}>
-                    <p className="text-2xl font-extrabold" style={{ color: '#4F46E5' }}>{completedCount}</p>
-                    <p className="text-base" style={{ color: 'var(--text-secondary)' }}>Tamamlanan</p>
+                {isRestDay && (
+                  <p className="text-base px-4 py-3 rounded-xl text-center"
+                    style={{ background: '#F0FDF4', color: '#059669' }}>
+                    😴 Dinlenme günü
+                  </p>
+                )}
+                {/* Dinlenme gününde yalnızca soru çözülmüşse (oturum/tamamlama yok)
+                    "0 Tamamlanan / 0s Süre" kartlarını gösterme. */}
+                {!(isRestDay && completedCount === 0 && totalMin === 0) && (
+                  <div className="flex gap-3">
+                    <div className="flex-1 px-4 py-3 rounded-xl text-center" style={{ background: '#EEF2FF' }}>
+                      <p className="text-2xl font-extrabold" style={{ color: '#4F46E5' }}>{completedCount}</p>
+                      <p className="text-base" style={{ color: 'var(--text-secondary)' }}>Tamamlanan</p>
+                    </div>
+                    <div className="flex-1 px-4 py-3 rounded-xl text-center" style={{ background: '#FFF7ED' }}>
+                      <p className="text-2xl font-extrabold" style={{ color: '#F97316' }}>{fmtMin(totalMin)}</p>
+                      <p className="text-base" style={{ color: 'var(--text-secondary)' }}>Toplam Süre</p>
+                    </div>
                   </div>
-                  <div className="flex-1 px-4 py-3 rounded-xl text-center" style={{ background: '#FFF7ED' }}>
-                    <p className="text-2xl font-extrabold" style={{ color: '#F97316' }}>{fmtMin(totalMin)}</p>
-                    <p className="text-base" style={{ color: 'var(--text-secondary)' }}>Toplam Süre</p>
-                  </div>
-                </div>
+                )}
                 {/* Tamamlanan dersler */}
                 {doneLessons.length > 0 && (
                   <div>
@@ -627,9 +742,11 @@ export default function GelisimimPage() {
 
   useEffect(() => { load() }, [filter])
 
-  // Tüm Zamanlar: aktif günlerin günlük soru dağılımını çek
+  // Aktif günlerin günlük soru dağılımı — streak ve "Tüm Zamanlar" görünümü
+  // ortak kullanır. Filter'a bağlı değil (önceden yalnızca 'all' iken çekiliyordu;
+  // bu yüzden "Bugün" sekmesindeyken streak soru günlerini görmeden hatalı
+  // sayıyordu).
   useEffect(() => {
-    if (filter !== 'all') { setQuestionsByDay([]); return }
     let cancelled = false
     ;(async () => {
       const now = new Date()
@@ -663,7 +780,7 @@ export default function GelisimimPage() {
       )
     })()
     return () => { cancelled = true }
-  }, [filter])
+  }, [])
 
   // Bugün tamamlanan dersler (plan blokları + manuel görevler)
   const today = new Date()
@@ -803,35 +920,40 @@ export default function GelisimimPage() {
   const effectiveXp = xp ? applyXpBoost(xp, localXpBoost) : null
   const xpFraction = effectiveXp ? xpProgressFraction(effectiveXp) : 0
 
-  // Streak: bir gün "çalışma günü" sayılır eğer o gün plan oturumu tamamlanmışsa
-  // (w_ = zayıf, s_ = güçlü blok) VEYA soru çözülmüşse. Manuel görevler (manual-)
-  // ve molalar (m_) çalışma sayılmaz — streak'i tetiklemez. Günler ardışık
-  // olmalı; boşluk olunca seri kırılır.
+  // Streak kuralı: bir gün "çalışma günü" sayılır eğer o gün
+  //   - mola dışı bir görev (plan w_/s_ veya manuel görev) tamamlanmışsa VEYA
+  //   - soru çözülmüşse.
+  // Yalnızca molalar (m_) hariç tutulur. Günler ardışık olmalı; aradaki bir gün
+  // tamamen boşsa seri kırılır.
+  //
+  // Bugün boş olsa bile dünden gelen streak HÂLÂ canlı sayılır (kullanıcı henüz
+  // gün bitmeden çalışabilir). Bu yüzden sayım başlangıcı: bugün aktifse bugün,
+  // değilse dün.
   const effectiveStreak = useMemo(() => {
-    const isStudyId = (id: string) => id.startsWith('w_') || id.startsWith('s_')
+    const isRealTaskId = (id: string) => !id.startsWith('m_')
     const activeDays = new Set<string>()
-    // Client: gerçek plan oturumu tamamlanan günler
     for (const [date, ids] of Object.entries(getAllCompletedTaskDays())) {
-      if ([...ids].some(isStudyId)) activeDays.add(date)
+      if ([...ids].some(isRealTaskId)) activeDays.add(date)
     }
-    // Client: soru çözülen günler (Tüm Zamanlar görünümünden gelir)
     for (const r of questionsByDay) {
       if (r.questions.some((q) => q.count > 0)) activeDays.add(r.date)
     }
-    // Backend ardışık serisinden az olmasın (soru/oturum kaydı olan hesaplar).
-    const backendStreak = xp?.streakDays ?? 0
-
-    // Bugünden geriye ardışık say.
     const now = new Date()
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    // Sayım başlangıcı: bugün aktifse bugünden, değilse dünden.
+    const cursor = new Date(today)
+    if (!activeDays.has(ymd(cursor))) {
+      cursor.setDate(cursor.getDate() - 1)
+    }
     let count = 0
-    const cursor = new Date(start)
     while (activeDays.has(ymd(cursor))) {
       count++
       cursor.setDate(cursor.getDate() - 1)
     }
-    return Math.max(count, backendStreak)
-  }, [xp, completedIds, questionsByDay, todayStr])
+    // Backend xp.streakDays'i fallback olarak kullanmıyoruz — client aktivite
+    // set'i tek doğruluk kaynağı (boş günleri/dinlenmeyi backend yanlış sayabiliyor).
+    return count
+  }, [completedIds, questionsByDay, todayStr])
 
   // Soru gelişimi için ders havuzu
   const questionSubjects = useMemo(() => {

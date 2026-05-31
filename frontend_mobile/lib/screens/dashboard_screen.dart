@@ -943,7 +943,9 @@ class _RenewChangeSheetState extends State<_RenewChangeSheet> {
         : _weak.isNotEmpty;
     if (!hasMin) {
       setState(() {
-        _error = 'Program oluşturmak için en az 1 zayıf ders seçmelisin.';
+        _error = isFullyManual
+            ? 'Program oluşturmak için en az 1 ders eklemelisin.'
+            : 'Program oluşturmak için en az 1 zayıf ders eklemelisin.';
       });
       return;
     }

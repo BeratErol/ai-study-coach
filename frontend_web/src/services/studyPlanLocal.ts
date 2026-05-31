@@ -18,11 +18,51 @@ function isSameDay(a: Date, b: Date): boolean {
   )
 }
 
-/** Onboarding verisinden plan üretir; hem localStorage'a hem backend'e yazar. */
+function archiveKey(userId: string): string {
+  return `user_${userId}_weekly_plan_archive`
+}
+
+/** Geçmiş tüm plan günleri birleştirilmiş arşiv. Yeni plan üretildiğinde
+ *  eski plan günleri buraya eklenir; "Geçmişi Gör"de eski plan günlerinde
+ *  blok bilgisi ve dinlenme bayrağı bu arşivden okunur. */
+export function getPlanArchive(): StudyDay[] {
+  const userId = getUserId()
+  if (!userId) return []
+  const raw = localStorage.getItem(archiveKey(userId))
+  if (!raw) return []
+  try {
+    return JSON.parse(raw) as StudyDay[]
+  } catch {
+    return []
+  }
+}
+
+/** Onboarding verisinden plan üretir; hem localStorage'a hem backend'e yazar.
+ *  Yeni plan üretirken eski planın günlerini arşive ekler (geçmişi gör için). */
 export function generateAndStorePlan(userId: string, data: OnboardingData): StudyDay[] {
+  // Mevcut planı oku ve geçmiş günlerini arşive ekle.
+  const existingRaw = localStorage.getItem(planKey(userId))
+  if (existingRaw) {
+    try {
+      const old = JSON.parse(existingRaw) as StudyDay[]
+      const archive = getPlanArchive()
+      const known = new Set(archive.map((d) => d.date.slice(0, 10)))
+      const merged = [...archive]
+      for (const d of old) {
+        const k = d.date.slice(0, 10)
+        if (!known.has(k)) {
+          merged.push(d)
+          known.add(k)
+        }
+      }
+      localStorage.setItem(archiveKey(userId), JSON.stringify(merged))
+      pushAppState('weekly_plan_archive', merged)
+    } catch {
+      // bozuk eski plan → arşive eklenmez
+    }
+  }
   const plan = generateWeeklyPlan(data)
   localStorage.setItem(planKey(userId), JSON.stringify(plan))
-  // Backend senkronu — mobil aynı planı kullansın
   pushAppState('weekly_plan', plan)
   return plan
 }

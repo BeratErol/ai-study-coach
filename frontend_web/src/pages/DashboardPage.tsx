@@ -293,7 +293,11 @@ function RenewChangeModal({ onClose, onConfirm }: {
 
   function submit() {
     if (isFullyManual ? customSubjects.length === 0 : weak.length === 0) {
-      setError('Program oluşturmak için en az 1 zayıf ders seçmelisin.')
+      setError(
+        isFullyManual
+          ? 'Program oluşturmak için en az 1 ders eklemelisin.'
+          : 'Program oluşturmak için en az 1 zayıf ders eklemelisin.',
+      )
       return
     }
     onConfirm({ strongSubjects: strong, weakSubjects: weak, customSubjects })

@@ -80,6 +80,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ref.invalidate(topicAssignmentsProvider);
         ref.invalidate(chatbotProvider);
         ref.invalidate(restDaysProvider);
+        // Streak hesabı bu iki sağlayıcıdan beslenir; önceki kullanıcının
+        // cache'i sızmasın diye temizle.
+        ref.invalidate(streakActiveDaysProvider);
+        ref.invalidate(questionsByDayProvider);
         // "Tüm Zamanlar" kapsam bayrağı kullanıcıya özel — önceki hesaptan
         // kalan true değeri yeni hesaba sızmasın diye sıfırla.
         ref.invalidate(weeklyHistoryEnabledProvider);
@@ -138,6 +142,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ref.invalidate(todayTasksProvider);
       ref.invalidate(onboardingDataProvider);
       ref.invalidate(chatbotProvider);
+      // Streak veri kaynakları — eski kullanıcının değeri sızmasın.
+      ref.invalidate(streakActiveDaysProvider);
+      ref.invalidate(questionsByDayProvider);
       // Kapsam bayrağı hydrate ile güncellenmiş olabilir → taze oku.
       ref.invalidate(weeklyHistoryEnabledProvider);
       if (mounted) context.go('/dashboard');
@@ -181,9 +188,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      // Klavye açılınca tüm Stack/gradient'i yeniden layout etme — kasmayı önler.
-      // İçerik zaten SingleChildScrollView içinde, klavye varken kaydırılabilir.
-      resizeToAvoidBottomInset: false,
+      // Klavye açılınca form sıkıştırılır → SingleChildScrollView klavye
+      // üstünde kalır ve TextField otomatik görünür kılınır. (Önceden false
+      // idi, scroll view klavye altında kalıyordu.)
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
           // ── Gradient top section ────────────────────────────────────────

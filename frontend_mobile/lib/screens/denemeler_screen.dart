@@ -278,31 +278,74 @@ class _DenemeScreenState extends ConsumerState<DenemeScreen> {
               .toList();
           if (allExams.isEmpty) return _EmptyBody(onAdd: _showAddModal);
 
-          // Mevcut türler (sadece gerçekte var olanlar)
-          final types = allExams
-              .map((e) => e['type'] as String? ?? '')
-              .where((t) => t.isNotEmpty)
-              .toSet()
-              .toList()
-            ..sort();
+          // Mevcut türler. OKUL_SINAVI'de her ders ayrı bir tür gibi gösterilir
+          // ("OKUL_SINAVI:<lessonName>" formatında) → kullanıcı CERRAHİ,
+          // PATOLOJİ gibi ayrı sekmelerde görür.
+          final types = <String>{};
+          for (final e in allExams) {
+            final t = e['type'] as String? ?? '';
+            if (t.isEmpty) continue;
+            if (t == 'OKUL_SINAVI') {
+              final details = e['details'] as List<dynamic>? ?? [];
+              final lesson = details.isNotEmpty
+                  ? (details.first['lessonName'] as String? ?? 'Diğer')
+                  : 'Diğer';
+              types.add('OKUL_SINAVI:$lesson');
+            } else {
+              types.add(t);
+            }
+          }
+          final typesList = types.toList()..sort();
 
           // İlk yüklemede ilk türü otomatik seç. Önceki seçim bu sınava ait
           // değilse de düşür.
-          if (_filterType == null || !types.contains(_filterType)) {
-            _filterType = types.isNotEmpty ? types.first : null;
+          if (_filterType == null || !typesList.contains(_filterType)) {
+            _filterType = typesList.isNotEmpty ? typesList.first : null;
           }
 
           // Filtre uygula
-          final filtered = _filterType == null
-              ? <Map<String, dynamic>>[]
-              : allExams.where((e) => (e['type'] as String?) == _filterType).toList();
+          bool matchesFilter(Map<String, dynamic> e) {
+            final ft = _filterType;
+            if (ft == null) return false;
+            final t = e['type'] as String? ?? '';
+            if (ft.startsWith('OKUL_SINAVI:')) {
+              if (t != 'OKUL_SINAVI') return false;
+              final wantedLesson = ft.substring('OKUL_SINAVI:'.length);
+              final details = e['details'] as List<dynamic>? ?? [];
+              final lesson = details.isNotEmpty
+                  ? (details.first['lessonName'] as String? ?? '')
+                  : '';
+              return lesson == wantedLesson;
+            }
+            return t == ft;
+          }
+          final filtered = allExams.where(matchesFilter).toList();
 
           final isBrans = _filterType == 'BRANS';
 
-          // Seçili tür için ExamTypeInfo bul (radar için — BRANS'ta kullanılmaz)
-          final selectedTypeInfo = (!isBrans && _filterType != null)
-              ? kExamTypes.where((t) => t.apiType == _filterType).firstOrNull
-              : null;
+          // Seçili tür için ExamTypeInfo bul (radar için — BRANS'ta kullanılmaz).
+          // OKUL_SINAVI:<lesson> formatı için _okulSinaviType'tan tek dersli bir
+          // tür üret — radar zaten tek derste anlamlı değil ama lesson info için.
+          ExamTypeInfo? selectedTypeInfo;
+          if (!isBrans && _filterType != null) {
+            final ft = _filterType!;
+            if (ft.startsWith('OKUL_SINAVI:')) {
+              final lessonName = ft.substring('OKUL_SINAVI:'.length);
+              final slot = _okulSinaviType.lessons
+                  .where((l) => l.name == lessonName)
+                  .firstOrNull;
+              selectedTypeInfo = slot == null
+                  ? null
+                  : ExamTypeInfo(
+                      displayName: lessonName,
+                      apiType: 'OKUL_SINAVI',
+                      lessons: [slot],
+                    );
+            } else {
+              selectedTypeInfo =
+                  kExamTypes.where((t) => t.apiType == ft).firstOrNull;
+            }
+          }
 
           // BRANS: ders adına göre grupla
           final Map<String, List<Map<String, dynamic>>> bransGroups = {};
@@ -373,11 +416,22 @@ class _DenemeScreenState extends ConsumerState<DenemeScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                   child: Row(
-                    children: types.map((t) {
-                      final displayName = kExamTypes
-                          .where((x) => x.apiType == t)
-                          .map((x) => x.displayName)
-                          .firstOrNull ?? t;
+                    children: typesList.map((t) {
+                      // OKUL_SINAVI:<lesson> → chip etiketi olarak ders adının
+                      // büyük harfli hali (örn. CERRAHİ). Diğer türler için
+                      // displayName.
+                      String displayName;
+                      if (t.startsWith('OKUL_SINAVI:')) {
+                        displayName = t
+                            .substring('OKUL_SINAVI:'.length)
+                            .toUpperCase();
+                      } else {
+                        displayName = kExamTypes
+                                .where((x) => x.apiType == t)
+                                .map((x) => x.displayName)
+                                .firstOrNull ??
+                            t;
+                      }
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: _FilterChip(
@@ -800,12 +854,25 @@ class _NetSummaryCard extends StatelessWidget {
     final maxNet = nets.reduce((a, b) => a > b ? a : b);
     final minNet = nets.reduce((a, b) => a < b ? a : b);
     final avg = nets.reduce((a, b) => a + b) / nets.length;
-    final isOkul = filterType == 'OKUL_SINAVI';
-    final displayName = labelOverride ??
-        (filterType != null
-            ? (kExamTypes.where((t) => t.apiType == filterType).firstOrNull?.displayName ?? filterType!)
-            : 'Genel');
-    final scoreLabel = isOkul ? 'Puan' : 'Net';
+    // filterType "OKUL_SINAVI" veya "OKUL_SINAVI:<lesson>" olabilir.
+    final isOkul = filterType != null &&
+        (filterType == 'OKUL_SINAVI' || filterType!.startsWith('OKUL_SINAVI:'));
+    String resolveDisplay() {
+      if (labelOverride != null) return labelOverride!;
+      if (filterType == null) return 'Genel';
+      if (filterType!.startsWith('OKUL_SINAVI:')) {
+        // "OKUL_SINAVI:Cerrahi" → "Cerrahi"
+        return filterType!.substring('OKUL_SINAVI:'.length);
+      }
+      return kExamTypes
+              .where((t) => t.apiType == filterType)
+              .firstOrNull
+              ?.displayName ??
+          filterType!;
+    }
+    final displayName = resolveDisplay();
+    // Tüm sınavlar için "Net" — OkulSinavi'de de puan değil net.
+    const scoreLabel = 'Net';
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
@@ -1640,7 +1707,7 @@ class _ExamListCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              isOkul ? '${net.toStringAsFixed(0)} Puan' : '${net.toStringAsFixed(1)} Net',
+              isOkul ? '${net.toStringAsFixed(0)} Net' : '${net.toStringAsFixed(1)} Net',
               style: const TextStyle(
                   color: Color(0xFF166534),
                   fontWeight: FontWeight.w700,

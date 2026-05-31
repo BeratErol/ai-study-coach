@@ -22,7 +22,14 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
 
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  Set<String> _activeDays = {};
+  // Backend'in döndürdüğü aktif günler ≈ soru/oturum kaydı olan günler.
+  Set<String> _backendActiveDays = {};
+  // Client tamamlanan görev (m_ hariç) günleri — yeşil noktayla gösterilir.
+  Set<String> _taskDays = {};
+  // Plan bloklarının TÜMÜ tamamlandığı günler — koyu yeşil nokta.
+  Set<String> _fullyDoneDays = {};
+  // Aktif plan + arşiv birleşik (eski plan günlerinde de blok / dinlenme bilgisi).
+  List<StudyDay> _mergedPlan = const [];
   bool _loading = true;
 
   @override
@@ -33,24 +40,136 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
 
   Future<void> _loadMonth(DateTime month) async {
     setState(() => _loading = true);
+    // Client task günlerini SharedPreferences'tan oku (ay-içi filtreli).
+    final monthPrefix =
+        '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    final prefs = await SharedPreferences.getInstance();
+    final userId = await TokenService.getUserId() ?? '';
+    final localDays = <String>{};
+    // Gün → o gün tamamlanmış görev id'leri.
+    final doneIdsByDay = <String, Set<String>>{};
+    for (final key in prefs.getKeys()) {
+      String? date;
+      final newPrefix = 'user_${userId}_completed_tasks_';
+      final oldPrefix = 'completed_tasks_${userId}_';
+      if (key.startsWith(newPrefix)) {
+        date = key.substring(newPrefix.length);
+      } else if (key.startsWith(oldPrefix)) {
+        date = key.substring(oldPrefix.length);
+      }
+      if (date == null || !date.startsWith(monthPrefix)) continue;
+      final raw = prefs.getString(key);
+      List<String> ids;
+      if (raw != null) {
+        try {
+          ids = (jsonDecode(raw) as List).cast<String>();
+        } catch (_) {
+          ids = [];
+        }
+      } else {
+        ids = prefs.getStringList(key) ?? [];
+      }
+      if (ids.any((id) => !id.startsWith('m_'))) {
+        localDays.add(date);
+        doneIdsByDay.putIfAbsent(date, () => <String>{}).addAll(ids);
+      }
+    }
+    // Plan bloklarının TÜMÜ tamamlandığı günleri hesapla. Plan günü dinlenme
+    // ise zaten "tam tamamlandı" mantığı geçerli değil — atlanır. Aktif plan +
+    // geçmiş plan arşivi birleşik kullanılır (eski plan günleri de doğru
+    // değerlendirilir).
+    final activePlan = ref.read(studyPlanProvider).value ?? const [];
+    final archiveRaw = prefs.getString('user_${userId}_weekly_plan_archive');
+    final archivePlan = <StudyDay>[];
+    if (archiveRaw != null) {
+      try {
+        for (final e in (jsonDecode(archiveRaw) as List)) {
+          archivePlan.add(StudyDay.fromJson(e as Map<String, dynamic>));
+        }
+      } catch (_) {}
+    }
+    final activeKeys = activePlan.map((d) => _ymd(d.date)).toSet();
+    final plan = [
+      ...archivePlan.where((d) => !activeKeys.contains(_ymd(d.date))),
+      ...activePlan,
+    ];
+    // Çalışan kod aynı plan değişkenini kullanacak.
+    final fullyDone = <String>{};
+    for (final pd in plan) {
+      if (pd.isOffDay) continue;
+      final dateStr =
+          '${pd.date.year}-${pd.date.month.toString().padLeft(2, '0')}-${pd.date.day.toString().padLeft(2, '0')}';
+      if (!dateStr.startsWith(monthPrefix)) continue;
+      final blockIds = pd.blocks
+          .where((b) => !b.isMola)
+          .map((b) => b.id)
+          .toList();
+      if (blockIds.isEmpty) continue;
+      final done = doneIdsByDay[dateStr] ?? const <String>{};
+      if (blockIds.every(done.contains)) fullyDone.add(dateStr);
+    }
     try {
       final days =
           await _service.getCalendarActiveDays(month.year, month.month);
       if (mounted) {
         setState(() {
-          _activeDays = days.toSet();
+          _backendActiveDays = days.toSet();
+          _taskDays = localDays;
+          _fullyDoneDays = fullyDone;
+          _mergedPlan = plan;
           _loading = false;
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _taskDays = localDays;
+          _fullyDoneDays = fullyDone;
+          _mergedPlan = plan;
+          _loading = false;
+        });
+      }
     }
   }
 
-  bool _isActive(DateTime day) {
-    final key =
-        '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-    return _activeDays.contains(key);
+  String _ymd(DateTime day) =>
+      '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+
+  // Marker rengi:
+  //   koyu yeşil → o günün TÜM plan oturumları tamamlanmış
+  //   açık yeşil → kısmen tamamlanmış (en az 1 oturum/manuel ama eksik var)
+  //   turuncu    → yalnızca soru çözümü
+  //   kırmızı    → programa dahil + dinlenme değil + hiçbir aktivite yok
+  //   mavi       → dinlenme günü + hiçbir aktivite yok
+  //   null       → gelecek / programa dahil değil
+  Color? _markerColor(DateTime day) {
+    final key = _ymd(day);
+    if (_taskDays.contains(key)) {
+      return _fullyDoneDays.contains(key)
+          ? const Color(0xFF047857) // koyu yeşil
+          : const Color(0xFF86EFAC); // açık yeşil
+    }
+    if (_backendActiveDays.contains(key)) return const Color(0xFFF59E0B);
+
+    // Gelecek günleri renklendirme.
+    final today = DateTime.now();
+    final todayD = DateTime(today.year, today.month, today.day);
+    final dayD = DateTime(day.year, day.month, day.day);
+    if (dayD.isAfter(todayD)) return null;
+
+    // Aktif plan + arşiv birleşik — eski plan günleri için de doğru sonuç.
+    final restList = ref.read(restDaysProvider);
+    final planDay = _mergedPlan.where((d) =>
+        d.date.year == day.year &&
+        d.date.month == day.month &&
+        d.date.day == day.day).firstOrNull;
+    final isRest =
+        (planDay?.isOffDay ?? false) || restList.contains(key);
+    if (isRest) return const Color(0xFF3B82F6); // mavi
+    if (planDay != null && !planDay.isOffDay) {
+      return const Color(0xFFEF4444); // kırmızı
+    }
+    return null;
   }
 
   String _toDateStr(DateTime day) =>
@@ -115,6 +234,7 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
                         child: LinearProgressIndicator(
                             color: Color(0xFF4F46E5)),
                       ),
+                    const _CalendarLegend(),
                     TableCalendar(
                       locale: 'tr_TR',
                       firstDay: DateTime(2024),
@@ -163,15 +283,44 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
                             fontSize: 16, fontWeight: FontWeight.w700),
                       ),
                       calendarBuilders: CalendarBuilders(
+                        // Seçili gün: dolgusu noktanın koyu tonuyla; nokta yok
+                        // (hem nokta hem arka plan birlikte gözükmesin).
+                        selectedBuilder: (ctx, day, _) {
+                          final base = _markerColor(day) ?? const Color(0xFF4F46E5);
+                          // Açık yeşil arka plan (kısmen tamamlanmış) seçiliyken
+                          // beyaz yazı okunmaz; koyu yeşil yazıya geç.
+                          final isLightGreen = base.toARGB32() == const Color(0xFF86EFAC).toARGB32();
+                          return Container(
+                            margin: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: base,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              '${day.day}',
+                              style: TextStyle(
+                                color: isLightGreen
+                                    ? const Color(0xFF059669)
+                                    : Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          );
+                        },
                         markerBuilder: (ctx, day, _) {
-                          if (_isActive(day)) {
+                          // Seçili gün noktaya gerek yok — selectedBuilder zaten
+                          // dolgu rengiyle gösteriyor.
+                          if (isSameDay(_selectedDay, day)) return null;
+                          final color = _markerColor(day);
+                          if (color != null) {
                             return Positioned(
                               bottom: 4,
                               child: Container(
                                 width: 6,
                                 height: 6,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFF59E0B),
+                                decoration: BoxDecoration(
+                                  color: color,
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -215,8 +364,10 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
       // Kullanıcının manuel "Dinlenme Modu" işaretlediği günler de off-day.
       final restList = ref.read(restDaysProvider);
       final dateStr = _toDateStr(day);
-      final plan = ref.read(studyPlanProvider).value;
-      if (plan != null) {
+      // Aktif plan + arşiv birleşik — eski plan günleri için de dinlenme/blok
+      // bilgisi okunabilsin (web ile aynı davranış).
+      final plan = _mergedPlan;
+      if (plan.isNotEmpty) {
         StudyDay? studyDay;
         for (final d in plan) {
           if (d.date.year == day.year &&
@@ -229,12 +380,15 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
         final isOff =
             (studyDay?.isOffDay ?? false) || restList.contains(dateStr);
         if (isOff) {
+          // Geçmiş dinlenme günü → GunlukRaporSheet (isRestDay banner'lı).
+          // Aktivite (tamamlanan görev / soru) varsa banner'ın altında listelenir.
           showModalBottomSheet(
             context: context,
             isScrollControlled: true,
             useRootNavigator: true,
             backgroundColor: Colors.transparent,
-            builder: (_) => _OffDaySheet(day: studyDay?.date ?? day),
+            builder: (_) =>
+                GunlukRaporSheet(date: dateStr, isRestDay: true),
           );
           return;
         }
@@ -298,6 +452,61 @@ class _GecmisiGorCalendarState extends ConsumerState<GecmisiGorCalendar> {
       useRootNavigator: true,
       backgroundColor: Colors.transparent,
       builder: (_) => GunlukRaporSheet(date: _toDateStr(day)),
+    );
+  }
+}
+
+// ─── Takvim renk açıklamaları ────────────────────────────────────────────────
+
+class _CalendarLegend extends StatelessWidget {
+  const _CalendarLegend();
+
+  static const _items = [
+    (Color(0xFF047857), 'Tüm Çalışma Oturumları Tamamlandı'),
+    (Color(0xFF86EFAC), 'Çalışma Oturumu Tamamlandı'),
+    (Color(0xFFF59E0B), 'Soru Çözümü Yapıldı'),
+    (Color(0xFFEF4444), 'Çalışma Yapılmadı'),
+    (Color(0xFF3B82F6), 'Dinlenme Günü'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Wrap(
+        spacing: 14,
+        runSpacing: 8,
+        children: _items.map((item) {
+          final color = item.$1;
+          final label = item.$2;
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                ),
+              ),
+            ],
+          );
+        }).toList(),
+      ),
     );
   }
 }

@@ -158,7 +158,9 @@ function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSav
 
   const totalNet = activeLessons.reduce((sum, l) => {
     const v = values[l.name] ?? { correct: 0, wrong: 0 }
-    return sum + (v.correct - v.wrong / 4)
+    // OkulSinavi'de net = doğru sayısı (yanlış cezası yok); diğer sınavlarda
+    // doğru - yanlış/4.
+    return sum + (isOkulSinavi ? v.correct : v.correct - v.wrong / 4)
   }, 0)
 
   function setVal(lesson: string, field: 'correct' | 'wrong', n: number) {
@@ -183,7 +185,13 @@ function ExamFormModal({ existing, availableTypes, branchLessons, onClose, onSav
     }
     const details = activeLessons.map((l) => {
       const v = values[l.name] ?? { correct: 0, wrong: 0 }
-      return { lessonName: l.name, correct: v.correct, incorrect: v.wrong }
+      // OkulSinavi'de yanlış cezası yok → backend net = correct olsun diye
+      // incorrect=0 gönderilir.
+      return {
+        lessonName: l.name,
+        correct: v.correct,
+        incorrect: isOkulSinavi ? 0 : v.wrong,
+      }
     })
     if (details.every((d) => d.correct === 0 && d.incorrect === 0)) {
       setError('En az bir derse sonuç girmelisin.')
@@ -906,18 +914,60 @@ export default function DenemelorPage() {
     [allExams, allowedApiTypes],
   )
 
-  // Mevcut deneme türleri (gerçekte kayıtlı + sınava ait olanlar)
+  // Mevcut deneme türleri. OKUL_SINAVI denemeleri ders bazında ayrı tür gibi
+  // gösterilir (filter id "OKUL_SINAVI:<lessonName>") — kullanıcı CERRAHİ,
+  // PATOLOJİ vb. ayrı sekmeler görür.
   const presentTypes = useMemo(() => {
-    const set = new Set(allowedExams.map((e) => e.type).filter(Boolean))
+    const set = new Set<string>()
+    for (const e of allowedExams) {
+      if (!e.type) continue
+      if (e.type === 'OKUL_SINAVI') {
+        const lesson = e.details[0]?.lessonName ?? 'Diğer'
+        set.add(`OKUL_SINAVI:${lesson}`)
+      } else {
+        set.add(e.type)
+      }
+    }
     return [...set].sort()
   }, [allowedExams])
 
   const effectiveFilter = filterType ?? presentTypes[0] ?? null
-  const filtered = effectiveFilter ? allowedExams.filter((e) => e.type === effectiveFilter) : []
+  function matchesFilter(e: ExamRecord): boolean {
+    if (!effectiveFilter) return false
+    if (effectiveFilter.startsWith('OKUL_SINAVI:')) {
+      if (e.type !== 'OKUL_SINAVI') return false
+      const wanted = effectiveFilter.substring('OKUL_SINAVI:'.length)
+      return (e.details[0]?.lessonName ?? '') === wanted
+    }
+    return e.type === effectiveFilter
+  }
+  const filtered = effectiveFilter ? allowedExams.filter(matchesFilter) : []
   const isBrans = effectiveFilter === 'BRANS'
-  const selectedTypeInfo = !isBrans && effectiveFilter
-    ? types.find((t) => t.apiType === effectiveFilter) ?? null
-    : null
+  const isOkulSinavi = effectiveFilter?.startsWith('OKUL_SINAVI:') ?? false
+  // OKUL_SINAVI:<lesson> için tek-dersli sentetik tür (radar/lesson info için).
+  let selectedTypeInfo: ExamTypeInfo | null = null
+  if (isOkulSinavi && effectiveFilter) {
+    const lessonName = effectiveFilter.substring('OKUL_SINAVI:'.length)
+    const okulType = types.find((t) => t.apiType === 'OKUL_SINAVI')
+    const slot = okulType?.lessons.find((l) => l.name === lessonName)
+    if (slot) {
+      selectedTypeInfo = {
+        displayName: lessonName,
+        apiType: 'OKUL_SINAVI',
+        lessons: [slot],
+      }
+    }
+  } else if (!isBrans && effectiveFilter) {
+    selectedTypeInfo = types.find((t) => t.apiType === effectiveFilter) ?? null
+  }
+
+  // Filter chip etiketi: OKUL_SINAVI:<lesson> → <LESSON>, diğer → displayName.
+  function filterLabel(t: string): string {
+    if (t.startsWith('OKUL_SINAVI:')) {
+      return t.substring('OKUL_SINAVI:'.length).toLocaleUpperCase('tr-TR')
+    }
+    return examTypeDisplayName(t)
+  }
 
   async function handleDelete(id: number) {
     try {
@@ -976,7 +1026,7 @@ export default function DenemelorPage() {
                       border: `1.5px solid ${effectiveFilter === t ? 'var(--primary)' : 'var(--border)'}`,
                     }}
                   >
-                    {examTypeDisplayName(t)}
+                    {filterLabel(t)}
                   </button>
                 ))}
               </div>
@@ -1011,7 +1061,7 @@ export default function DenemelorPage() {
               ) : (
                 <>
                   {filtered.length > 0 && (
-                    <NetSummary exams={filtered} typeName={examTypeDisplayName(effectiveFilter ?? '')} />
+                    <NetSummary exams={filtered} typeName={filterLabel(effectiveFilter ?? '')} />
                   )}
 
                   {filtered.length >= 2 ? (

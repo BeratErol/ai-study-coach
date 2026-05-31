@@ -50,15 +50,22 @@ class _GelisimimScreenState extends ConsumerState<GelisimimScreen> {
     final localXpBoost =
         (localStats.completedTasks + pastCompleted) * 10;
     // Streak için client aktivite günleri + soru günleri.
-    final clientActiveDays =
-        ref.watch(streakActiveDaysProvider).value ?? <String>{};
+    final clientActiveAsync = ref.watch(streakActiveDaysProvider);
     final questionsByDayForStreak =
         ref.watch(questionsByDayProvider).value ?? const <QuestionsByDay>[];
-    int streakFor(XpInfo xp) => computeEffectiveStreak(
-          xp: xp,
-          clientActiveDays: clientActiveDays,
-          questionsByDay: questionsByDayForStreak,
-        );
+    // Set henüz yüklenmediyse streak'i 0 göster (rozet gizlenir). Backend
+    // xp.streakDays'i fallback olarak kullanma — soru/oturum kayıt mantığı
+    // gerçek aktiviteyle örtüşmüyor, hatalı yüksek değer dönebilir. Set
+    // yüklenince doğru hesaplama yapılır ve rozet açılır.
+    int streakFor(XpInfo xp) {
+      final clientDays = clientActiveAsync.value;
+      if (clientDays == null) return 0;
+      return computeEffectiveStreak(
+        xp: xp,
+        clientActiveDays: clientDays,
+        questionsByDay: questionsByDayForStreak,
+      );
+    }
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -372,9 +379,12 @@ class _ScopeChoice extends StatelessWidget {
 // ─── XP Header ────────────────────────────────────────────────────────────────
 
 /// Streak = backend (soru/oturum) ∪ client (tamamlanan ders) aktivite günleri,
-/// bugünden geriye ardışık sayılır. Sadece ders tamamlayan (soru/oturum
-/// kaydı olmayan) hesaplarda backend streakBeforeToday=0 döndüğü için
-/// client günleri de hesaba katılır.
+/// ardışık sayılır. Sadece ders tamamlayan (soru/oturum kaydı olmayan)
+/// hesaplarda backend streakBeforeToday=0 döndüğü için client günleri de
+/// hesaba katılır.
+///
+/// Bugün boş olsa bile dünden gelen seri korunur — sayım başlangıcı: bugün
+/// aktifse bugünden, değilse dünden. Aradaki bir gün tamamen boşsa kırılır.
 int computeEffectiveStreak({
   required XpInfo xp,
   required Set<String> clientActiveDays,
@@ -388,12 +398,17 @@ int computeEffectiveStreak({
   }
   final now = DateTime.now();
   var cursor = DateTime(now.year, now.month, now.day);
+  if (!active.contains(ymd(cursor))) {
+    cursor = cursor.subtract(const Duration(days: 1));
+  }
   int count = 0;
   while (active.contains(ymd(cursor))) {
     count++;
     cursor = cursor.subtract(const Duration(days: 1));
   }
-  return count > xp.streakDays ? count : xp.streakDays;
+  // Backend xp.streakDays'i fallback olarak kullanmıyoruz — client aktivite
+  // set'i tek doğruluk kaynağı (boş günleri/dinlenmeyi backend yanlış sayabiliyor).
+  return count;
 }
 
 class _XpHeader extends StatelessWidget {
