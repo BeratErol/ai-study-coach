@@ -8,6 +8,30 @@ Mobil (Flutter) ve web (React) istemcileri **aynı backend** üzerinden birebir 
 
 ---
 
+## 🎨 Uygulama Arayüzü (Screenshots)
+
+### 📱 Mobil Platform
+<p align="center">
+  <img src="docs/screenshots/app_screenshots/mobile_login.jpeg" width="22%" />
+  <img src="docs/screenshots/app_screenshots/mobile_dashboard.jpeg" width="22%" />
+  <img src="docs/screenshots/app_screenshots/mobile_pomodoro_timer.jpeg" width="22%" />
+  <img src="docs/screenshots/app_screenshots/mobile_progress_analytics.jpeg" width="22%" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/app_screenshots/mobile_exam_trends.jpeg" width="22%" />
+  <img src="docs/screenshots/app_screenshots/mobile_balance_radar.jpeg" width="22%" />
+  <img src="docs/screenshots/app_screenshots/mobile_ai_coach_analysis.jpeg" width="22%" />
+  <img src="docs/screenshots/app_screenshots/mobile_profile_settings.jpeg" width="22%" />
+</p>
+
+### 💻 Web Platformu
+<p align="center">
+  <img src="docs/screenshots/app_screenshots/web_login.png" width="45%" alt="Web Login"/>
+  <img src="docs/screenshots/app_screenshots/web_dashboard.jpg" width="45%" alt="Web Dashboard"/>
+</p>
+
+---
+
 ## 🚀 Öne Çıkan Özellikler
 
 ### 🧠 Akıllı Program Üretimi
