@@ -27,7 +27,7 @@ Mobil (Flutter) ve web (React) istemcileri **aynı backend** üzerinden birebir 
 ### 💻 Web Platformu
 <p align="center">
   <img src="docs/screenshots/app_screenshots/web_login.png" width="45%" alt="Web Login"/>
-  <img src="docs/screenshots/app_screenshots/web_dashboard.jpg" width="45%" alt="Web Dashboard"/>
+  <img src="docs/screenshots/app_screenshots/web_dashboard.png" width="45%" alt="Web Dashboard"/>
 </p>
 
 ---
